@@ -412,7 +412,32 @@ export class GameRenderer {
             ctx.drawImage(sheet.img, (c & 0x7f) * ts, (a & 0x7f) * ts, ts, ts, dx, dy, tileDraw, tileDraw);
             fgDrawn = true;
           }
-        } else if (useOverhaul || useRemaster16) {
+        } else if (useOverhaul) {
+          // 100% Pure 5-Buffer Procedural Pixel Engine (zero external spritesheets)
+          if (obj) {
+            const [, , tval, sval, kIdx, dAttr] = obj;
+            const sym = tval === 75 ? 33 : tval === 70 ? 63 : tval === 127 ? 36 : tval >= 20 && tval <= 23 ? 124 : tval === 45 ? 61 : tval === 7 ? 126 : 91;
+            const itemImg = this.atlas.getItemSprite(tval, sym, dAttr, kIdx || sval, sval);
+            ctx.drawImage(itemImg, dx, dy, tileDraw, tileDraw);
+            fgDrawn = true;
+          }
+          if (mon) {
+            const [, , , , , , , dChar, rIdx, dAttr] = mon;
+            const monImg = this.atlas.getCreatureSprite("mon", dChar, dAttr, rIdx);
+            ctx.drawImage(monImg, dx, dy, tileDraw, tileDraw);
+            fgDrawn = true;
+          }
+          if (isPlayer) {
+            const pImg = this.atlas.getCreatureSprite("player", 64, 6, p.pclass || 0);
+            ctx.drawImage(pImg, dx, dy, tileDraw, tileDraw);
+            fgDrawn = true;
+          }
+          if (!fgDrawn && !(a & 0x80) && !(c & 0x80) && c > 32 && c < 127) {
+            const vfxImg = this.atlas.getVfxSprite(c, a);
+            ctx.drawImage(vfxImg, dx, dy, tileDraw, tileDraw);
+            fgDrawn = true;
+          }
+        } else if (useRemaster16) {
           if ((a & 0x80) && (c & 0x80) && (a !== ta || c !== tc || isPlayer || mon || obj)) {
             const rem = this.atlas.getRemastered16x(a & 0x7f, c & 0x7f);
             if (rem) {
@@ -423,7 +448,7 @@ export class GameRenderer {
 
           if (!fgDrawn) {
             if (isPlayer) {
-              const fb = this.atlas.getCreatureSprite("player", 64, 1, p.pclass || 0);
+              const fb = this.atlas.getCreatureSprite("player", 64, 6, p.pclass || 0);
               if (fb) {
                 ctx.drawImage(fb, dx, dy, tileDraw, tileDraw);
                 fgDrawn = true;
@@ -662,7 +687,16 @@ export class GameRenderer {
         const tc = this.grid[idx + 3];
         const px = offsetX + x * cellW;
 
-        if ((a & 0x80) && (c & 0x80) && (graf === "overhaul" || graf === "new")) {
+        if ((a & 0x80) && (c & 0x80) && graf === "overhaul") {
+          const sz = Math.min(cellW, cellH);
+          const feat = mapCellToFeatureType("", a, c);
+          const tile = feat !== "floor"
+            ? this.atlas.getTerrainTile(feat, (x + y) & 3, true)
+            : this.atlas.getTerrainTile("floor", (x + y) & 3, true);
+          ctx.drawImage(tile, px + (cellW - sz) / 2, py + (cellH - sz) / 2, sz, sz);
+          continue;
+        }
+        if ((a & 0x80) && (c & 0x80) && graf === "new") {
           const rem = this.atlas.getRemastered16x(a & 0x7f, c & 0x7f);
           if (rem) {
             const sz = Math.min(cellW, cellH);

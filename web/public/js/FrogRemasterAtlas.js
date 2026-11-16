@@ -679,23 +679,42 @@ const CREATURE_GRIDS = {
     "................",
     "................",
   ],
+  winged_beast: [
+    "................",
+    ".CC..........CC.",
+    "CCCC........CCCC",
+    "CCCCC.HHHH.CCCCC",
+    ".CCCCCHEEHCCCCC.",
+    "..CCCBBBBBBCCC..",
+    "...CCBBAAABCC...",
+    ".....BBBBBB.....",
+    ".....BBAAAB.....",
+    "......BBBB......",
+    ".....KK..KK.....",
+    "....K......K....",
+    "................",
+    "................",
+    "................",
+    "................",
+  ],
 };
 
 function selectArchetype(ch) {
-  if (ch === "@" || "phtokn".includes(ch)) return "humanoid";
-  if ("TPOH".includes(ch)) return "giant_troll";
+  if (ch === "@" || "phtoknA".includes(ch)) return "humanoid";
+  if ("TPOHg".includes(ch)) return "giant_troll";
   if ("Dd".includes(ch)) return "dragon_wyrm";
   if ("uU".includes(ch)) return "demon_balrog";
   if ("LVWGsz".includes(ch)) return "undead_lich";
   if (ch === "e") return "beholder_eye";
-  if ("SaIBcK".includes(ch)) return "arachnid_insect";
-  if ("CfZqrg".includes(ch)) return "quadruped_hound";
+  if ("SaIcK".includes(ch)) return "arachnid_insect";
+  if ("Bb".includes(ch)) return "winged_beast";
+  if ("CfZqr".includes(ch)) return "quadruped_hound";
   if ("JMRwl".includes(ch)) return "serpent_hydra";
   if ("jm,vE".includes(ch)) return "slime_mold";
   return "humanoid";
 }
 
-function mutateCreatureGrid(baseRows, dna, isPlayer) {
+function mutateCreatureGrid(baseRows, dna, isPlayer, isAngel = false) {
   const rows = baseRows.map((r) => r.split(""));
   const headDna = isPlayer ? (dna % 4) : (dna & 7) % 6;
   const weapDna = (dna >>> 3) % 6;
@@ -736,8 +755,8 @@ function mutateCreatureGrid(baseRows, dna, isPlayer) {
     rows[1][13] = "E"; rows[2][15] = "E";
   }
 
-  // DNA 4: Wing / Tail / Cloak Mutation
-  if (wingDna === 0 && rows[3][1] === ".") {
+  // DNA 4: Wing / Tail / Cloak Mutation (Angels 'A' always get wings)
+  if ((wingDna === 0 || isAngel) && rows[3][1] === ".") {
     rows[2][1] = "C"; rows[3][1] = "C"; rows[3][2] = "C";
     rows[2][14] = "C"; rows[3][14] = "C"; rows[3][13] = "C";
   } else if (wingDna === 3) {
@@ -759,8 +778,9 @@ export function synthesizeCreatureSprite(category, charCode, dAttr = 1, entityId
   const matBack = isPlayer ? 11 : ((matBody === 11 || matBody === 15) ? 15 : 4);
   const scaly = "DdMJCR".includes(ch) || ((dna >>> 8) & 1) === 1;
 
+  const isAngel = ch === "A";
   const archetype = isPlayer ? "humanoid" : selectArchetype(ch);
-  const mutatedGrid = mutateCreatureGrid(CREATURE_GRIDS[archetype], dna, isPlayer);
+  const mutatedGrid = mutateCreatureGrid(CREATURE_GRIDS[archetype], dna, isPlayer, isAngel);
 
   const s = new PixelSurface(size, size);
   const offX = (size - 16) >> 1;
@@ -1065,6 +1085,32 @@ export function synthesizeItemSprite(tval, charCode, dAttr = 1, entityId = 0, si
   return surfaceToCanvas(s, { outline: true, ditherStrength: 0.0 });
 }
 
+export function synthesizeVfxSprite(charCode, dAttr = 11, size = 24) {
+  const ch = typeof charCode === "number" ? String.fromCharCode(charCode) : (charCode || "*");
+  const mat = attrToPaletteMat(dAttr, 16);
+  const s = new PixelSurface(size, size);
+  const cx = size >> 1, cy = size >> 1;
+
+  if (ch === "-" || ch === "|" || ch === "/" || ch === "\\") {
+    const dx = ch === "|" ? 0 : 7;
+    const dy = ch === "-" ? 0 : (ch === "/" ? -7 : 7);
+    s.drawBresenhamLine(cx - dx, cy - dy, cx + dx, cy + dy, mat, 5.0, -0.4, -0.4, 0.8, 2);
+    s.drawBresenhamLine(cx - dx, cy - dy + 1, cx + dx, cy + dy + 1, mat, 4.4, 0.2, 0.2, 0.9, 0);
+  } else {
+    // Glowing spell burst / bolt orb / target flare ('*', 'o', '+')
+    for (let y = 4; y < size - 4; y++) {
+      for (let x = 4; x < size - 4; x++) {
+        const d = Math.hypot(x - cx, y - cy);
+        if (d <= 5.5 && (d <= 3.0 || ((x === cx || y === cy || Math.abs(x - cx) === Math.abs(y - cy)) && d <= 5.5))) {
+          s.setPixel(x, y, d < 2.2 ? 16 : mat, 5.5 - d * 0.2, (x - cx) * 0.15, (y - cy) * 0.15, 0.85, d < 2.2 ? 2 : 1);
+        }
+      }
+    }
+  }
+
+  return surfaceToCanvas(s, { outline: true, ditherStrength: 0.0 });
+}
+
 // ============================================================================
 // 5. NON-DESTRUCTIVE 16x16 LEGACY REMASTERER (FOR 16px FIX MODE)
 // ============================================================================
@@ -1219,5 +1265,10 @@ export class FrogRemasterAtlas {
   getItemSprite(tval, charCode, dAttr = 1, entityId = 0, sval = 0) {
     const key = `proc_itm:${tval}:${sval}:${charCode}:${dAttr}:${entityId}`;
     return this.getOrBuildTile(key, () => synthesizeItemSprite(tval, charCode, dAttr, entityId, this.tileSize, sval));
+  }
+
+  getVfxSprite(charCode, dAttr = 11) {
+    const key = `proc_vfx:${charCode}:${dAttr}`;
+    return this.getOrBuildTile(key, () => synthesizeVfxSprite(charCode, dAttr, this.tileSize));
   }
 }
