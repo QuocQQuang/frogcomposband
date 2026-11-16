@@ -2467,7 +2467,9 @@ void screen_load(void)
 {
     screen_load_aux();
     msg_line_redraw();
+    combat_log_redraw(); /* Repaint persistent combat log after screen restore */
 }
+
 
 bool screen_is_saved(void)
 {
@@ -3241,6 +3243,108 @@ void pause_line(int row)
  * Hack -- special buffer to hold the action of the current keymap
  */
 static char request_command_buffer[256];
+
+/*
+ * Mouse helpers used by various UIs (shops, birth, prompts).
+ * These are linked from multiple modules, so keep them here with input code.
+ */
+bool mouse_get_event(mouse_event_t *event)
+{
+    int i;
+    term *old = Term;
+
+    if (!use_mouse) return FALSE;
+    if (!event) return FALSE;
+
+    /* Mouse events may be queued on a term different from current Term.
+     * Scan all terms and consume the first pending mouse event. */
+    for (i = 0; i < 8; i++)
+    {
+        if (!angband_term[i]) continue;
+        Term_activate(angband_term[i]);
+        if (!Term_getmouse(event, FALSE, TRUE))
+        {
+            if (old) Term_activate(old);
+            mouse_last_event = *event;
+            return TRUE;
+        }
+    }
+
+    if (old) Term_activate(old);
+    return FALSE;
+}
+
+/*
+ * Scan the clicked terminal row for the closest "key)" pattern and return
+ * the key character. Returns 0 if no suitable match is found.
+ */
+int mouse_find_choice(mouse_event_t *event)
+{
+    int x, wid;
+    int best_key = 0, best_dist = 9999;
+
+    if (!event) return 0;
+    wid = Term->wid;
+
+    for (x = 0; x < wid - 1; x++)
+    {
+        byte a;
+        char c;
+
+        Term_what(x, event->y, &a, &c);
+        if (c != ')') continue;
+
+        /* Find token immediately before ')' */
+        {
+            int start = x - 1;
+            int len, key = 0;
+            char tok[8];
+
+            while (start >= 0)
+            {
+                Term_what(start, event->y, &a, &c);
+                if (!(isalpha((unsigned char)c) || isdigit((unsigned char)c)
+                   || c == '*' || c == '=' || c == '?'
+                   || c == '!' || c == '<' || c == '>'
+                   || c == ';' || c == '@' || c == '#'))
+                    break;
+                start--;
+            }
+            start++;
+            len = x - start;
+            if (len <= 0 || len >= (int)sizeof(tok)) continue;
+
+            {
+                int i;
+                for (i = 0; i < len; i++)
+                    Term_what(start + i, event->y, &a, &tok[i]);
+                tok[len] = '\0';
+            }
+
+            if (len == 1)
+                key = (unsigned char)tok[0];
+            else if (streq(tok, "ESC") || streq(tok, "esc"))
+                key = ESCAPE;
+            else if (streq(tok, "RET") || streq(tok, "ret"))
+                key = '\r';
+            else
+                key = 0;
+
+            if (key)
+            {
+                int center = start + len/2;
+                int dist = ABS(center - event->x);
+                if (dist < best_dist)
+                {
+                    best_dist = dist;
+                    best_key = key;
+                }
+            }
+        }
+    }
+
+    return best_key;
+}
 
 
 
@@ -4780,7 +4884,7 @@ int inkey_special(bool numpad_cursor)
     int              i;
     size_t           trig_len;
 
-    if (strcmp(ANGBAND_SYS, "sdl") == 0)
+    if (strcmp(ANGBAND_SYS, "sdl") == 0 || strcmp(ANGBAND_SYS, "web") == 0)
     {
         modifiers = _sdl_modifiers;
         keys = _sdl_special_keys;

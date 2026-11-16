@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>FrogComposband — Web Edition</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <!-- Top Header / Toolbar -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-crest">⚔</span>
+        <div class="brand-text">
+          <h1>FrogComposband</h1>
+          <span class="brand-sub" id="conn-badge">Connecting...</span>
+        </div>
+      </div>
+
+      <div class="top-status-pills" id="top-pills">
+        <div class="pill" title="Current Location">
+          <span class="pill-lbl">Depth</span>
+          <span class="pill-val" id="pill-depth">Town</span>
+        </div>
+        <div class="pill" title="Game Turn">
+          <span class="pill-lbl">Turn</span>
+          <span class="pill-val" id="pill-turn">0</span>
+        </div>
+        <div class="pill" title="Gold">
+          <span class="pill-lbl">Gold</span>
+          <span class="pill-val gold" id="pill-gold">0</span>
+        </div>
+      </div>
+
+      <div class="toolbar-actions">
+        <div class="segmented" title="Graphics Style">
+          <button class="seg-btn active" data-graf="overhaul">Overhaul</button>
+          <button class="seg-btn" data-graf="new">16px Fix</button>
+          <button class="seg-btn" data-graf="proc32">HD 32</button>
+          <button class="seg-btn" data-graf="none">ASCII</button>
+        </div>
+
+        <button id="btn-ctrl-mode" class="tool-btn accent" title="Toggle WASD Smart vs Classic Roguelike keys (F2)">
+          Controls: <strong id="lbl-ctrl-mode">WASD</strong>
+        </button>
+
+        <button id="btn-fx" class="tool-btn active" title="Toggle Bayer Torchlight & Particles">
+          ✨FX
+        </button>
+
+        <div class="zoom-group">
+          <button id="btn-zoom-out" class="icon-btn" title="Zoom Out">−</button>
+          <span id="lbl-zoom" class="zoom-val">200%</span>
+          <button id="btn-zoom-in" class="icon-btn" title="Zoom In">+</button>
+        </div>
+
+        <button id="btn-sound" class="tool-btn active" title="Toggle Web Audio SFX">🔊</button>
+        <button id="btn-dpad" class="tool-btn" title="Toggle On-Screen D-Pad">🕹</button>
+        <button id="btn-sidebar" class="tool-btn active" title="Toggle Hero & Log Panels">◧</button>
+        <a href="/help/index.html" target="_blank" class="tool-btn" title="Open Game Manual">?</a>
+        <button id="btn-lobby" class="tool-btn danger-ghost" title="Return to Title / Save Lobby">Lobby</button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="workspace">
+      <!-- Left HUD: Hero Stats, Vitals, Inventory, Radar -->
+      <aside id="left-panel" class="side-panel left-panel">
+        <section class="card hero-card">
+          <div class="hero-header">
+            <div>
+              <div class="hero-name" id="hero-name">Adventurer</div>
+              <div class="hero-sub" id="hero-sub">Create or load a character</div>
+            </div>
+            <div class="hero-lv" id="hero-lv">Lv 1</div>
+          </div>
+
+          <div class="bars">
+            <div class="bar-row">
+              <div class="bar-meta"><span>HP</span><span id="hp-text">0 / 0</span></div>
+              <div class="bar-track"><div class="bar-fill hp" id="hp-bar" style="width: 100%"></div></div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-meta"><span>SP</span><span id="sp-text">0 / 0</span></div>
+              <div class="bar-track"><div class="bar-fill sp" id="sp-bar" style="width: 100%"></div></div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-meta"><span>XP</span><span id="xp-text">0</span></div>
+              <div class="bar-track thin"><div class="bar-fill xp" id="xp-bar" style="width: 0%"></div></div>
+            </div>
+          </div>
+
+          <div class="combat-stats">
+            <div class="stat-chip"><span>AC</span><strong id="stat-ac">0</strong></div>
+            <div class="stat-chip"><span>Speed</span><strong id="stat-spd">+0</strong></div>
+            <div class="stat-chip"><span>Light</span><strong id="stat-lite">0</strong></div>
+          </div>
+
+          <div class="attr-grid" id="attr-grid">
+            <div class="attr-cell"><span>STR</span><strong id="st-0">--</strong></div>
+            <div class="attr-cell"><span>INT</span><strong id="st-1">--</strong></div>
+            <div class="attr-cell"><span>WIS</span><strong id="st-2">--</strong></div>
+            <div class="attr-cell"><span>DEX</span><strong id="st-3">--</strong></div>
+            <div class="attr-cell"><span>CON</span><strong id="st-4">--</strong></div>
+            <div class="attr-cell"><span>CHR</span><strong id="st-5">--</strong></div>
+          </div>
+
+          <div class="status-flags" id="status-flags"></div>
+        </section>
+
+        <!-- Target Card (shown when targeting) -->
+        <section class="card target-card hidden" id="target-card">
+          <div class="card-title">🎯 Active Target</div>
+          <div class="target-name" id="target-name">-</div>
+          <div class="bar-track thin"><div class="bar-fill hp" id="target-hp-bar" style="width: 100%"></div></div>
+        </section>
+
+        <!-- Tabs: Backpack / Equipment / Nearby Monsters -->
+        <section class="card drawer-card">
+          <div class="tab-header">
+            <button class="tab-btn active" data-tab="radar">Nearby</button>
+            <button class="tab-btn" data-tab="inven">Pack</button>
+            <button class="tab-btn" data-tab="equip">Gear</button>
+          </div>
+          <div class="tab-body" id="tab-radar">
+            <div class="empty-hint">No visible creatures nearby.</div>
+          </div>
+          <div class="tab-body hidden" id="tab-inven">
+            <div class="empty-hint">Pack is empty.</div>
+          </div>
+          <div class="tab-body hidden" id="tab-equip">
+            <div class="empty-hint">No gear equipped.</div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Center Viewport: HD Canvas + Overlays + Hotbar -->
+      <section class="stage-wrap">
+        <div class="canvas-stage" id="canvas-stage">
+          <canvas id="game-canvas"></canvas>
+
+          <!-- Floating Hover Inspector Tooltip -->
+          <div id="hover-tooltip" class="hover-tooltip hidden">
+            <div class="ht-title" id="ht-title"></div>
+            <div class="ht-sub" id="ht-sub"></div>
+            <div class="ht-bar-wrap hidden" id="ht-bar-wrap">
+              <div class="ht-bar-fill" id="ht-bar-fill"></div>
+            </div>
+          </div>
+
+          <!-- Context Prompt Pills (More / Confirm / Menu Helpers) -->
+          <div id="prompt-actions" class="prompt-actions hidden">
+            <button class="prompt-pill" data-key="32">Space · Continue</button>
+            <button class="prompt-pill" data-key="13">Enter · Confirm</button>
+            <button class="prompt-pill" data-key="121">Y · Yes</button>
+            <button class="prompt-pill" data-key="110">N · No</button>
+            <button class="prompt-pill ghost" data-key="27">Esc · Back</button>
+          </div>
+
+          <!-- Optional On-Screen Touch / Click D-Pad -->
+          <div id="touch-dpad" class="touch-dpad hidden">
+            <button data-dir="7">↖</button><button data-dir="8">↑</button><button data-dir="9">↗</button>
+            <button data-dir="4">←</button><button data-key="46" class="center">·</button><button data-dir="6">→</button>
+            <button data-dir="1">↙</button><button data-dir="2">↓</button><button data-dir="3">↘</button>
+          </div>
+        </div>
+
+        <!-- Modern Action Hotbar -->
+        <div class="hotbar" id="hotbar">
+          <button class="hb-btn" data-cmd="." title="Wait / Stay 1 Turn (.)"><span>⏳</span><small>Wait</small></button>
+          <button class="hb-btn" data-cmd="R" title="Rest until healed (R)"><span>⛺</span><small>Rest</small></button>
+          <button class="hb-btn" data-cmd="s" title="Search for traps/doors (s)"><span>🔍</span><small>Search</small></button>
+          <button class="hb-btn" data-cmd="g" title="Pick up items (g)"><span>🎒</span><small>Get</small></button>
+          <button class="hb-btn" data-cmd="l" title="Look / Inspect (l)"><span>👁</span><small>Look</small></button>
+          <button class="hb-btn" data-cmd="f" title="Fire missile / Target (f)"><span>🏹</span><small>Fire</small></button>
+          <button class="hb-btn" data-cmd="m" title="Cast spell (m)"><span>✨</span><small>Cast</small></button>
+          <button class="hb-btn" data-cmd="U" title="Use racial/class power (U)"><span>⚡</span><small>Power</small></button>
+          <button class="hb-btn" data-cmd="q" title="Quaff potion (q)"><span>🧪</span><small>Quaff</small></button>
+          <button class="hb-btn" data-cmd="r" title="Read scroll (r)"><span>📜</span><small>Read</small></button>
+          <button class="hb-btn" data-cmd="z" title="Zap rod (z)"><span>🪄</span><small>Zap</small></button>
+          <button class="hb-btn" data-cmd="i" title="Inventory (i)"><span>📦</span><small>Pack</small></button>
+          <button class="hb-btn" data-cmd="C" title="Character Sheet (C)"><span>🛡</span><small>Char</small></button>
+          <button class="hb-btn" data-cmd="M" title="Dungeon Map (M)"><span>🗺</span><small>Map</small></button>
+          <button class="hb-btn" data-cmd=">" title="Go down stairs (>)"><span>🔽</span><small>Down</small></button>
+          <button class="hb-btn" data-cmd="<" title="Go up stairs (<)"><span>🔼</span><small>Up</small></button>
+          <button class="hb-btn" data-key="19" title="Save & Exit (^S)"><span>💾</span><small>Save</small></button>
+        </div>
+      </section>
+
+      <!-- Right HUD: Live Message Log & Quick Controls Guide -->
+      <aside id="right-panel" class="side-panel right-panel">
+        <section class="card log-card">
+          <div class="card-title-row">
+            <span class="card-title">📜 Chronicle</span>
+            <span class="hint-chip" id="ctx-badge">Lobby</span>
+          </div>
+          <div id="msg-log" class="msg-log"></div>
+        </section>
+
+        <section class="card controls-card">
+          <div class="card-title">🎮 Modern Controls</div>
+          <ul class="ctrl-list">
+            <li><strong>Left Click Map</strong> Walk / Attack / Auto-Travel</li>
+            <li><strong>Right Click</strong> Look / Inspect / Cancel Menu</li>
+            <li><strong>Ctrl + Click</strong> Lock Target / Ranged</li>
+            <li><strong>Scroll Wheel</strong> Smooth Camera Zoom</li>
+            <li><strong>WASD + QEZC</strong> 8-Way Move (Shift = Run)</li>
+            <li><strong>F2</strong> Switch WASD ↔ Classic Keys</li>
+          </ul>
+        </section>
+      </aside>
+    </main>
+
+    <!-- Title / Save Lobby Modal -->
+    <div id="lobby-modal" class="modal-backdrop">
+      <div class="lobby-dialog">
+        <div class="lobby-hero">
+          <div class="lobby-badge">WEB EDITION · 32x32 HD</div>
+          <h2>FrogComposband</h2>
+          <p>Classic deep-roguelike mechanics reborn with 32x32 procedural tiles, dynamic torchlight, mouse travel, smart WASD, and synthesized audio.</p>
+        </div>
+
+        <div class="lobby-grid">
+          <div class="lobby-box">
+            <h3>Start New Adventure</h3>
+            <label class="field-lbl" for="new-hero-name">Character Name</label>
+            <div class="inline-row">
+              <input id="new-hero-name" type="text" maxlength="15" value="PLAYER" placeholder="Enter hero name..." />
+              <button id="btn-start-new" class="primary-btn">New Hero</button>
+            </div>
+            <p class="small-note">Starts character creation with interactive mouse & keyboard support.</p>
+          </div>
+
+          <div class="lobby-box">
+            <h3>Continue Saved Run</h3>
+            <div id="save-list" class="save-list">
+              <div class="empty-hint">Scanning saves...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

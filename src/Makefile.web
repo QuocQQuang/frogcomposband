@@ -1,0 +1,23 @@
+# Makefile.web - Build frogcomposband-web.exe using existing MinGW64 toolchain
+
+include Makefile.src
+
+CC ?= gcc
+CFLAGS = -I. -std=c99 -O2 -DUSE_WEB -fno-omit-frame-pointer -Wall -Wno-unused-result
+LDFLAGS =
+LIBS = -lm
+
+WEB_OBJECTS = $(ANGFILES) $(CFILES) $(ZFILES) main-web.o
+TARGET = ../frogcomposband-web.exe
+
+all: $(TARGET)
+
+main-web.o: main-web.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(TARGET): $(WEB_OBJECTS)
+	$(CC) -o $@ $(WEB_OBJECTS) $(LDFLAGS) $(LIBS)
+	@echo Built $(TARGET)
+
+clean-web:
+	rm -f main-web.o $(TARGET)
