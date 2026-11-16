@@ -265,7 +265,7 @@ function paintQuietFloorOnSurface(s, seed = 1, matId = 17) {
     for (let x = 0; x < W; x++) {
       const r = rng();
       // 90% tone=1 (#1c1a29), ~8% faint slab seam tone=0 (#151320), ~2% fleck tone=2 (#242234)
-      const isSeam = (y % 12 === 0 && rowSeamMask && r < 0.55) || ((x + stag) % 12 === 0 && colSeamMask && r < 0.55);
+      const isSeam = (y % 12 === 0 && rowSeamMask && r < 0.42) || ((x + stag) % 12 === 0 && colSeamMask && r < 0.42);
       const isFleck = !isSeam && r < 0.02;
       const bias = isSeam ? -2 : isFleck ? 0 : -1;
       s.setPixel(x, y, matId, 0.5, 0, 0, 1, bias);
