@@ -43,6 +43,8 @@ function mapCellToFeatureType(cellCh, ta, tc) {
       if (col >= 13 && col <= 15) return "wall_magma";
       if (col >= 16 && col <= 18) return "wall_magma_gold";
       if (col >= 19 && col <= 21) return "wall_perm";
+      if (col >= 22 && col <= 24) return "stairs_up";
+      if (col >= 25 && col <= 27) return "stairs_down";
       if (col >= 28 && col <= 30) return "rubble";
     }
   }

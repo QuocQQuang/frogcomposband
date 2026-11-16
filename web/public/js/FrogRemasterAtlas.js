@@ -424,20 +424,88 @@ export function generateCleanTerrainTile(featureType, tileW = 24, tileH = 24, se
     return surfaceToCanvas(s, { outline: false, ditherStrength: 0.0 });
   }
 
-  if (featureType === "stairs_down" || featureType === "stairs_up") {
+  if (featureType === "stairs_up") {
     paintQuietFloorOnSurface(s, seed, 17);
-    const isDown = featureType === "stairs_down";
-    for (let step = 0; step < 4; step++) {
-      const sy = 4 + step * 4;
-      const sx0 = 4 + (isDown ? step : (3 - step));
-      const sx1 = tileW - 4 - (isDown ? (3 - step) : step);
-      for (let x = sx0; x < sx1; x++) {
-        s.setPixel(x, sy,     1, 3.8 - step * 0.3, -0.2, -0.6, 0.8, 1);
-        s.setPixel(x, sy + 1, 1, 3.6 - step * 0.3, 0, -0.2, 0.9, 0);
-        s.setPixel(x, sy + 2, 1, 3.2 - step * 0.3, 0, 0.4, 0.8, -1);
-        s.setPixel(x, sy + 3, 1, 2.8 - step * 0.3, 0, 0.6, 0.7, -2);
+    // Sunlit Stone Archway framing bright surface exit at top
+    for (let y = 2; y <= 8; y++) {
+      for (let x = 5; x <= 18; x++) {
+        const dx = (x - 11.5) / 6.5;
+        const dy = (y - 8) / 6.0;
+        const r = Math.hypot(dx, dy);
+        if (r <= 1.05 && r >= 0.62) {
+          s.setPixel(x, y, 1, 4.8, dx * 0.6, -0.5, 0.7, y < 5 ? 1 : 0); // Arch stones
+        } else if (r < 0.62) {
+          // Bright sky-cyan & ivory surface light pouring down
+          s.setPixel(x, y, y <= 5 ? 12 : 10, 2.0, 0, -0.5, 0.85, 2);
+        }
       }
     }
+    // Side balustrades with golden finials
+    for (let y = 8; y <= 20; y++) {
+      s.setPixel(5, y, 1, 4.5, -0.5, -0.2, 0.85, 1);
+      s.setPixel(6, y, 1, 4.4, -0.2, -0.2, 0.9, 0);
+      s.setPixel(17, y, 1, 4.4, 0.2, -0.2, 0.9, 0);
+      s.setPixel(18, y, 1, 4.5, 0.5, -0.2, 0.85, -1);
+    }
+    s.setPixel(5, 8, 7, 5.0, -0.4, -0.4, 0.8, 2);
+    s.setPixel(18, 8, 7, 5.0, 0.4, -0.4, 0.8, 1);
+
+    // 4 Ascending Steps (brightest at top, widest at bottom)
+    for (let step = 0; step < 4; step++) {
+      const sy = 8 + step * 3;
+      const sx0 = 7 - (step >= 2 ? 0 : 0);
+      const sx1 = 16;
+      const stepMat = step === 0 ? 10 : 1;
+      const litBias = 2 - step; // +2 at top step, -1 at bottom
+      for (let x = sx0; x <= sx1; x++) {
+        s.setPixel(x, sy,     stepMat, 4.2 - step * 0.45, -0.2, -0.7, 0.7, litBias + 1);
+        s.setPixel(x, sy + 1, stepMat, 4.0 - step * 0.45,  0.0, -0.2, 0.9, litBias);
+        s.setPixel(x, sy + 2, 1,       3.6 - step * 0.45,  0.0,  0.5, 0.8, Math.max(-2, litBias - 2));
+      }
+    }
+    // Crisp upward cyan chevron (^) on the sunlit portal
+    s.setPixel(11, 4, 12, 5.2, -0.3, -0.4, 0.85, 2);
+    s.setPixel(12, 4, 12, 5.2,  0.3, -0.4, 0.85, 2);
+    s.setPixel(10, 5, 12, 5.2, -0.3, -0.4, 0.85, 1);
+    s.setPixel(13, 5, 12, 5.2,  0.3, -0.4, 0.85, 1);
+    s.applyBevelAndAO();
+    return surfaceToCanvas(s, { outline: true, ditherStrength: 0.0 });
+  }
+
+  if (featureType === "stairs_down") {
+    paintQuietFloorOnSurface(s, seed, 17);
+    // Recessed Stone Pit Curb framing a deep pitch-black stairwell hole
+    for (let y = 3; y <= 20; y++) {
+      for (let x = 4; x <= 19; x++) {
+        const isRim = y <= 4 || x <= 5 || x >= 18 || y === 20;
+        if (isRim) {
+          s.setPixel(x, y, 1, 4.4, x <= 5 ? -0.5 : x >= 18 ? 0.5 : 0, y <= 4 ? -0.5 : 0.4, 0.8, y <= 4 ? 1 : 0);
+        } else {
+          // Deep abyssal stairwell void inside the pit
+          s.setPixel(x, y, 5, 1.0, 0, 0.5, 0.7, -3);
+        }
+      }
+    }
+    // 4 Descending Steps plunging down-right into darkness
+    for (let step = 0; step < 4; step++) {
+      const sy = 5 + step * 3;
+      const sx0 = 6 + step * 2;
+      const sx1 = 17;
+      const bias = 1 - step; // +1 at top entry, -2 near abyss
+      for (let x = sx0; x <= sx1; x++) {
+        s.setPixel(x, sy,     1, 3.8 - step * 0.6, -0.2, -0.6, 0.8, bias);
+        s.setPixel(x, sy + 1, 1, 3.5 - step * 0.6,  0.0,  0.1, 0.9, bias - 1);
+        s.setPixel(x, sy + 2, 1, 3.1 - step * 0.6,  0.0,  0.5, 0.8, Math.max(-3, bias - 2));
+      }
+    }
+    // Small warm torch sconce on top-left pit pillar + downward amber/crimson chevron (v) at pit lip
+    s.setPixel(5, 5, 16, 5.2, -0.4, -0.4, 0.8, 3);
+    s.setPixel(5, 6, 11, 5.0, -0.2,  0.2, 0.9, 2);
+    s.setPixel(10, 18, 16, 5.2, -0.3, -0.3, 0.85, 2);
+    s.setPixel(13, 18, 16, 5.2,  0.3, -0.3, 0.85, 2);
+    s.setPixel(11, 19, 11, 5.2, -0.2, -0.2, 0.9,  2);
+    s.setPixel(12, 19, 11, 5.2,  0.2, -0.2, 0.9,  2);
+    s.applyBevelAndAO();
     return surfaceToCanvas(s, { outline: true, ditherStrength: 0.0 });
   }
 
