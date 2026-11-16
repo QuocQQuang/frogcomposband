@@ -6,7 +6,7 @@
 
 import { FrogRemasterAtlas } from "./FrogRemasterAtlas.js";
 
-const ZOOM_STEPS = [0.5, 1.0, 1.5, 2.0, 3.0];
+const ZOOM_STEPS = [0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
 
 function mapCellToFeatureType(cellCh, ta, tc) {
   switch (cellCh) {
@@ -97,6 +97,10 @@ export class GameRenderer {
       mapH: 29,
       camX: 0,
       camY: 0,
+      topBarH: 30,
+      botBarH: 26,
+      canvasW: 800,
+      canvasH: 600,
     };
   }
 
@@ -110,9 +114,22 @@ export class GameRenderer {
     this.colors = Array.from({ length: 256 }, (_, i) => base[i % 16]);
   }
 
+  setZoom(val) {
+    const num = Number(val);
+    if (!Number.isFinite(num)) return this.zoom;
+    let best = ZOOM_STEPS[0];
+    let bestDiff = Infinity;
+    for (const z of ZOOM_STEPS) {
+      const d = Math.abs(z - num);
+      if (d < bestDiff) { bestDiff = d; best = z; }
+    }
+    this.zoom = best;
+    return this.zoom;
+  }
+
   stepZoom(dir) {
     let idx = ZOOM_STEPS.findIndex((z) => Math.abs(z - this.zoom) < 0.05);
-    if (idx === -1) idx = 3;
+    if (idx === -1) idx = 4;
     const next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, idx + (dir > 0 ? 1 : -1)));
     this.zoom = ZOOM_STEPS[next];
     return this.zoom;
@@ -153,12 +170,19 @@ export class GameRenderer {
   }
 
   isMapMode() {
-    return !!(this.state && this.state.dungeon && !this.state.icky && this.state.ctx === 0 && this.state.mapRect);
+    return !!(
+      this.state &&
+      this.state.dungeon &&
+      !this.state.icky &&
+      (this.state.ctx === 0 || this.state.ctx === 1 || this.state.ctx === 2) &&
+      this.state.mapRect
+    );
   }
 
   pixelToCell(px, py) {
     const L = this.layout;
     if (L.mode === "map") {
+      if (py < L.topBarH || py >= L.canvasH - L.botBarH) return null;
       const mx = Math.floor((px - L.camX) / L.cellW);
       const my = Math.floor((py - L.camY) / L.cellH);
       const ux = L.mapX + mx;
@@ -172,6 +196,46 @@ export class GameRenderer {
     const cy = Math.floor((py - L.offsetY) / L.cellH);
     if (cx < 0 || cx >= this.cols || cy < 0 || cy >= this.rows) return null;
     return { x: cx, y: cy, inMap: false };
+  }
+
+  extractRowRuns(rowIdx, maxCol = this.cols) {
+    const base = rowIdx * this.cols * 4;
+    const lim = Math.min(this.cols, maxCol);
+    const runs = [];
+    let curAttr = -1;
+    let curText = "";
+    let lastNonSpace = -1;
+
+    for (let cx = 0; cx < lim; cx++) {
+      const a = this.grid[base + cx * 4];
+      const c = this.grid[base + cx * 4 + 1];
+      const ch = c >= 32 && c < 127 ? String.fromCharCode(c) : " ";
+      if (ch !== " ") lastNonSpace = cx;
+      const attr = a & 0x0f;
+      if (attr !== curAttr) {
+        if (curText) runs.push({ attr: curAttr, text: curText });
+        curAttr = attr;
+        curText = ch;
+      } else {
+        curText += ch;
+      }
+    }
+    if (curText) runs.push({ attr: curAttr, text: curText });
+    if (lastNonSpace < 0) return [];
+    // Trim trailing whitespace across runs
+    let remaining = lastNonSpace + 1;
+    const trimmed = [];
+    for (const r of runs) {
+      if (remaining <= 0) break;
+      if (r.text.length <= remaining) {
+        trimmed.push(r);
+        remaining -= r.text.length;
+      } else {
+        trimmed.push({ attr: r.attr, text: r.text.slice(0, remaining) });
+        remaining = 0;
+      }
+    }
+    return trimmed;
   }
 
   render(nowMs) {
@@ -190,7 +254,7 @@ export class GameRenderer {
     ctx.save();
     ctx.scale(dpr, dpr);
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = "#141019";
+    ctx.fillStyle = "#0e1118";
     ctx.fillRect(0, 0, W, H);
 
     if (this.isMapMode()) {
@@ -203,7 +267,7 @@ export class GameRenderer {
 
   renderMapMode(ctx, W, H, nowMs) {
     const mr = this.state.mapRect;
-    const topBarH = 28;
+    const topBarH = 30;
     const botBarH = 26;
     const availH = Math.max(120, H - topBarH - botBarH);
 
@@ -225,7 +289,23 @@ export class GameRenderer {
       if (totalMapH > availH) camY = Math.round(Math.min(topBarH, Math.max(topBarH + availH - totalMapH, topBarH + availH / 2 - pLocalY)));
     }
 
-    this.layout = { mode: "map", offsetX: camX, offsetY: camY, cellW: tileDraw, cellH: tileDraw, mapX: mr.x, mapY: mr.y, mapW: mr.w, mapH: mr.h, camX, camY };
+    this.layout = {
+      mode: "map",
+      offsetX: camX,
+      offsetY: camY,
+      cellW: tileDraw,
+      cellH: tileDraw,
+      mapX: mr.x,
+      mapY: mr.y,
+      mapW: mr.w,
+      mapH: mr.h,
+      camX,
+      camY,
+      topBarH,
+      botBarH,
+      canvasW: W,
+      canvasH: H,
+    };
 
     const cells = this.state.cells || "";
     const los = this.state.los || "";
@@ -318,62 +398,71 @@ export class GameRenderer {
           ctx.drawImage(terrImg, dx, dy, tileDraw, tileDraw);
         }
 
-        // 2. Entity / Foreground Layer (Item, Monster, Player)
+        // 2. Entity / Foreground / Projectile Layer
         const key = `${ux},${uy}`;
         const mon = monMap.get(key);
         const obj = objMap.get(key);
         const isPlayer = ux === pUx && uy === pUy;
+        let fgDrawn = false;
 
         if (useProc32 || useOld8) {
           const sheet = useProc32 ? this.sheets.proc32 : this.sheets.old;
           const ts = sheet.tileSize;
           if ((a & 0x80) && (c & 0x80) && (a !== ta || c !== tc)) {
             ctx.drawImage(sheet.img, (c & 0x7f) * ts, (a & 0x7f) * ts, ts, ts, dx, dy, tileDraw, tileDraw);
+            fgDrawn = true;
           }
-        } else if (useOverhaul) {
-          // Pure 5-Buffer Procedural Pixel Engine (10 Archetype Grids + 4 DNA Mutations + Parametric NMM Items)
-          if (obj) {
-            const [, , tval, sval, kIdx, dAttr] = obj;
-            const sym = tval === 75 ? 33 : tval === 70 ? 63 : tval === 127 ? 36 : tval >= 20 && tval <= 23 ? 124 : tval === 45 ? 61 : tval === 7 ? 126 : 91;
-            const itemImg = this.atlas.getItemSprite(tval, sym, dAttr, kIdx || sval);
-            ctx.drawImage(itemImg, dx, dy, tileDraw, tileDraw);
-          }
-          if (mon) {
-            const [, , , , , , , dChar, rIdx, dAttr] = mon;
-            const monImg = this.atlas.getCreatureSprite("mon", dChar, dAttr, rIdx);
-            ctx.drawImage(monImg, dx, dy, tileDraw, tileDraw);
-          }
-          if (isPlayer) {
-            const pImg = this.atlas.getCreatureSprite("player", 64, 6, p.pclass || 0);
-            ctx.drawImage(pImg, dx, dy, tileDraw, tileDraw);
-          }
-        } else if (useRemaster16) {
-          let drawn = false;
+        } else if (useOverhaul || useRemaster16) {
           if ((a & 0x80) && (c & 0x80) && (a !== ta || c !== tc || isPlayer || mon || obj)) {
             const rem = this.atlas.getRemastered16x(a & 0x7f, c & 0x7f);
             if (rem) {
               ctx.drawImage(rem, dx, dy, tileDraw, tileDraw);
-              drawn = true;
+              fgDrawn = true;
             }
           }
-          if (!drawn) {
+
+          if (!fgDrawn) {
             if (isPlayer) {
-              ctx.drawImage(this.atlas.getCreatureSprite("player", 64, 6, p.pclass || 0), dx, dy, tileDraw, tileDraw);
+              const fb = this.atlas.getCreatureSprite("player", 64, 1, p.pclass || 0);
+              if (fb) {
+                ctx.drawImage(fb, dx, dy, tileDraw, tileDraw);
+                fgDrawn = true;
+              }
             } else if (mon) {
               const [, , , , , , , dChar, rIdx, dAttr, xAttr, xChar] = mon;
-              let sprite = (xAttr & 0x80) && (xChar & 0x80) ? this.atlas.getRemastered16x(xAttr & 0x7f, xChar & 0x7f) : null;
+              let sprite = (xAttr & 0x80) && (xChar & 0x80)
+                ? this.atlas.getRemastered16x(xAttr & 0x7f, xChar & 0x7f)
+                : null;
               if (!sprite) sprite = this.atlas.getCreatureSprite("mon", dChar, dAttr, rIdx);
-              ctx.drawImage(sprite, dx, dy, tileDraw, tileDraw);
+              if (sprite) {
+                ctx.drawImage(sprite, dx, dy, tileDraw, tileDraw);
+                fgDrawn = true;
+              }
             } else if (obj) {
               const [, , tval, sval, kIdx, dAttr, xAttr, xChar] = obj;
-              let sprite = (xAttr & 0x80) && (xChar & 0x80) ? this.atlas.getRemastered16x(xAttr & 0x7f, xChar & 0x7f) : null;
+              let sprite = (xAttr & 0x80) && (xChar & 0x80)
+                ? this.atlas.getRemastered16x(xAttr & 0x7f, xChar & 0x7f)
+                : null;
               if (!sprite) {
                 const sym = tval === 75 ? 33 : tval === 70 ? 63 : tval === 127 ? 36 : tval >= 20 && tval <= 23 ? 124 : tval === 45 ? 61 : tval === 7 ? 126 : 91;
-                sprite = this.atlas.getItemSprite(tval, sym, dAttr, kIdx || sval);
+                sprite = this.atlas.getItemSprite(tval, sym, dAttr, kIdx || sval, sval);
               }
-              ctx.drawImage(sprite, dx, dy, tileDraw, tileDraw);
+              if (sprite) {
+                ctx.drawImage(sprite, dx, dy, tileDraw, tileDraw);
+                fgDrawn = true;
+              }
             }
           }
+        }
+
+        // Render non-tile ASCII overlays (spell bolts, arrows, targeting path '*', effects)
+        if (!fgDrawn && !(a & 0x80) && !(c & 0x80) && c > 32 && c < 127) {
+          const glyph = String.fromCharCode(c);
+          ctx.font = `700 ${Math.max(11, Math.floor(tileDraw * 0.72))}px "Cascadia Code", Consolas, monospace`;
+          ctx.fillStyle = "rgba(0,0,0,0.75)";
+          ctx.fillText(glyph, dx + tileDraw * 0.5 + 1, dy + tileDraw * 0.52 + 1);
+          ctx.fillStyle = this.colorCss(a);
+          ctx.fillText(glyph, dx + tileDraw * 0.5, dy + tileDraw * 0.52);
         }
 
         // 3. Subtle Fog-of-War dimness for out-of-sight remembered tiles
@@ -423,6 +512,16 @@ export class GameRenderer {
       ctx.strokeRect(tx + 1, ty + 1, tileDraw - 2, tileDraw - 2);
     }
 
+    // Targeting / Look Engine Cursor
+    if (this.cursor.v && this.cursor.x >= mr.x && this.cursor.x < mr.x + mr.w && this.cursor.y >= mr.y && this.cursor.y < mr.y + mr.h) {
+      const cx = camX + (this.cursor.x - mr.x) * tileDraw;
+      const cy = camY + (this.cursor.y - mr.y) * tileDraw;
+      const pulse = 0.6 + 0.4 * Math.sin(nowMs * 0.01);
+      ctx.strokeStyle = `rgba(250, 204, 21, ${pulse})`;
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(cx + 2, cy + 2, tileDraw - 4, tileDraw - 4);
+    }
+
     // Hover Reticle
     if (this.hoverCell && this.hoverCell.inMap) {
       const hx = camX + (this.hoverCell.x - mr.x) * tileDraw;
@@ -439,12 +538,56 @@ export class GameRenderer {
     }
 
     ctx.restore();
+
+    // Multi-line message / prompt drawer if rows 1..5 in ui_msg_rect contain active prompt text
+    const extraMsgRows = [];
+    if (!this.state.cmdReady || this.state.promptKind === "more") {
+      const maxMsgCols = Math.min(72, this.cols - 13);
+      for (let r = 1; r <= 6; r++) {
+        const runs = this.extractRowRuns(r, maxMsgCols);
+        if (runs.length > 0 && runs.some((seg) => seg.text.trim().length > 0)) {
+          extraMsgRows.push({ r, runs });
+        } else {
+          break;
+        }
+      }
+    }
+
     this.renderBannerRow(ctx, 0, 0, 0, W, topBarH);
+    if (extraMsgRows.length > 0) {
+      const lineH = 20;
+      const boxH = extraMsgRows.length * lineH + 8;
+      ctx.fillStyle = "rgba(12, 16, 26, 0.92)";
+      ctx.fillRect(0, topBarH, W, boxH);
+      ctx.strokeStyle = "rgba(79, 209, 197, 0.28)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, topBarH + boxH);
+      ctx.lineTo(W, topBarH + boxH);
+      ctx.stroke();
+      extraMsgRows.forEach((item, idx) => {
+        this.drawColoredRuns(ctx, item.runs, 12, topBarH + 4 + idx * lineH + lineH / 2);
+      });
+    }
+
     this.renderBannerRow(ctx, this.rows - 1, 0, H - botBarH, W, botBarH);
   }
 
+  drawColoredRuns(ctx, runs, startX, centerY) {
+    if (!runs || runs.length === 0) return;
+    ctx.font = `600 13px "Cascadia Code", Consolas, monospace`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    let x = startX;
+    for (const seg of runs) {
+      ctx.fillStyle = this.colorCss(seg.attr);
+      ctx.fillText(seg.text, x, centerY);
+      x += ctx.measureText(seg.text).width;
+    }
+  }
+
   renderBannerRow(ctx, rowIdx, x, y, w, h) {
-    ctx.fillStyle = "rgba(20, 16, 25, 0.94)";
+    ctx.fillStyle = "rgba(12, 16, 26, 0.95)";
     ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = "rgba(148, 163, 184, 0.16)";
     ctx.lineWidth = 1;
@@ -453,45 +596,54 @@ export class GameRenderer {
     ctx.lineTo(x + w, rowIdx === 0 ? y + h : y);
     ctx.stroke();
 
-    const base = rowIdx * this.cols * 4;
-    let text = "", firstAttr = 1, found = false;
-    for (let cx = 0; cx < this.cols; cx++) {
-      const a = this.grid[base + cx * 4], c = this.grid[base + cx * 4 + 1];
-      const ch = c >= 32 && c < 127 ? String.fromCharCode(c) : " ";
-      if (!found && ch !== " ") { firstAttr = a; found = true; }
-      text += ch;
-    }
-    text = text.trimEnd();
-    if (!text) return;
-    ctx.font = `600 13px "Cascadia Code", Consolas, monospace`;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = this.colorCss(firstAttr);
-    ctx.fillText(text, x + 12, y + h / 2);
+    const runs = this.extractRowRuns(rowIdx);
+    this.drawColoredRuns(ctx, runs, x + 12, y + h / 2);
   }
 
   renderTermMode(ctx, W, H, nowMs) {
-    const availW = Math.max(320, W - 32), availH = Math.max(200, H - 24);
+    const availW = Math.max(320, W - 24);
+    const availH = Math.max(200, H - 20);
     const cellH = Math.max(12, Math.floor(availH / this.rows));
-    const cellW = Math.max(7, Math.min(Math.floor(availW / this.cols), Math.floor(cellH * 0.62)));
-    const gridW = cellW * this.cols, gridH = cellH * this.rows;
+    const cellW = Math.max(7, Math.min(Math.floor(availW / this.cols), Math.floor(cellH * 0.6)));
+    const gridW = cellW * this.cols;
+    const gridH = cellH * this.rows;
     const offsetX = Math.floor((W - gridW) / 2);
     const offsetY = Math.floor((H - gridH) / 2);
 
-    this.layout = { mode: "term", offsetX, offsetY, cellW, cellH, mapX: 0, mapY: 0, mapW: this.cols, mapH: this.rows, camX: offsetX, camY: offsetY };
+    this.layout = {
+      mode: "term",
+      offsetX,
+      offsetY,
+      cellW,
+      cellH,
+      mapX: 0,
+      mapY: 0,
+      mapW: this.cols,
+      mapH: this.rows,
+      camX: offsetX,
+      camY: offsetY,
+      topBarH: 0,
+      botBarH: 0,
+      canvasW: W,
+      canvasH: H,
+    };
 
-    ctx.fillStyle = "#141019";
-    ctx.fillRect(offsetX - 8, offsetY - 6, gridW + 16, gridH + 12);
+    ctx.fillStyle = "#111521";
+    ctx.fillRect(offsetX - 10, offsetY - 8, gridW + 20, gridH + 16);
     ctx.strokeStyle = "rgba(148, 163, 184, 0.22)";
     ctx.lineWidth = 1;
-    ctx.strokeRect(offsetX - 8, offsetY - 6, gridW + 16, gridH + 12);
+    ctx.strokeRect(offsetX - 10, offsetY - 8, gridW + 20, gridH + 16);
 
     if (this.hoverCell && !this.hoverCell.inMap) {
-      ctx.fillStyle = "rgba(79, 209, 197, 0.09)";
-      ctx.fillRect(offsetX, offsetY + this.hoverCell.y * cellH, gridW, cellH);
+      const hy = offsetY + this.hoverCell.y * cellH;
+      ctx.fillStyle = "rgba(79, 209, 197, 0.11)";
+      ctx.fillRect(offsetX, hy, gridW, cellH);
+      ctx.fillStyle = "rgba(79, 209, 197, 0.65)";
+      ctx.fillRect(offsetX - 4, hy + 2, 3, cellH - 4);
     }
 
-    ctx.font = `500 ${Math.max(11, Math.floor(cellH * 0.78))}px "Cascadia Code", Consolas, monospace`;
+    const fontPx = Math.max(11, Math.min(Math.floor(cellH * 0.78), Math.floor(cellW * 1.48)));
+    ctx.font = `500 ${fontPx}px "Cascadia Code", "JetBrains Mono", Consolas, monospace`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.imageSmoothingEnabled = false;
@@ -500,19 +652,33 @@ export class GameRenderer {
     const sheet = graf === "proc32" ? this.sheets.proc32 : graf === "old" ? this.sheets.old : null;
 
     for (let y = 0; y < this.rows; y++) {
-      const base = y * this.cols * 4, py = offsetY + y * cellH;
+      const base = y * this.cols * 4;
+      const py = offsetY + y * cellH;
       for (let x = 0; x < this.cols; x++) {
-        const idx = base + x * 4, a = this.grid[idx], c = this.grid[idx + 1], ta = this.grid[idx + 2], tc = this.grid[idx + 3];
+        const idx = base + x * 4;
+        const a = this.grid[idx];
+        const c = this.grid[idx + 1];
+        const ta = this.grid[idx + 2];
+        const tc = this.grid[idx + 3];
         const px = offsetX + x * cellW;
 
         if ((a & 0x80) && (c & 0x80) && (graf === "overhaul" || graf === "new")) {
           const rem = this.atlas.getRemastered16x(a & 0x7f, c & 0x7f);
-          if (rem) { ctx.drawImage(rem, px, py, cellW, cellH); continue; }
+          if (rem) {
+            const sz = Math.min(cellW, cellH);
+            ctx.drawImage(rem, px + (cellW - sz) / 2, py + (cellH - sz) / 2, sz, sz);
+            continue;
+          }
         }
         if (sheet && sheet.loaded && (a & 0x80) && (c & 0x80)) {
           const ts = sheet.tileSize;
-          if ((ta & 0x80) && (tc & 0x80)) ctx.drawImage(sheet.img, (tc & 0x7f) * ts, (ta & 0x7f) * ts, ts, ts, px, py, cellW, cellH);
-          ctx.drawImage(sheet.img, (c & 0x7f) * ts, (a & 0x7f) * ts, ts, ts, px, py, cellW, cellH);
+          const sz = Math.min(cellW, cellH);
+          const dx = px + (cellW - sz) / 2;
+          const dy = py + (cellH - sz) / 2;
+          if ((ta & 0x80) && (tc & 0x80)) {
+            ctx.drawImage(sheet.img, (tc & 0x7f) * ts, (ta & 0x7f) * ts, ts, ts, dx, dy, sz, sz);
+          }
+          ctx.drawImage(sheet.img, (c & 0x7f) * ts, (a & 0x7f) * ts, ts, ts, dx, dy, sz, sz);
         } else if (c > 32 && c < 127) {
           ctx.fillStyle = this.colorCss(a);
           ctx.fillText(String.fromCharCode(c), px + cellW * 0.5, py + cellH * 0.52);

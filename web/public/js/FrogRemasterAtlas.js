@@ -786,46 +786,123 @@ export function synthesizeCreatureSprite(category, charCode, dAttr = 1, entityId
 // 4. PARAMETRIC RECIPES FOR ITEMS, WEAPONS, ARMOR & PROPS (5-BUFFER NMM)
 // ============================================================================
 
-export function synthesizeItemSprite(tval, charCode, dAttr = 1, entityId = 0, size = 24) {
+export function synthesizeItemSprite(tval, charCode, dAttr = 1, entityId = 0, size = 24, sval = 0) {
   const ch = typeof charCode === "number" ? String.fromCharCode(charCode) : (charCode || "~");
-  const seed = hashStr32(`item:${tval}:${ch}:${dAttr}:${entityId}`);
+  const seed = hashStr32(`item:${tval}:${sval}:${ch}:${dAttr}:${entityId}`);
   const mat = attrToPaletteMat(dAttr, 7);
   const s = new PixelSurface(size, size);
 
-  // 1. Weapons (45-deg diagonal: along = x + (H-1-y), across = x - (H-1-y))
-  if ((tval >= 19 && tval <= 23) || "|/\\}".includes(ch)) {
-    const bladeMat = (dAttr === 11 || dAttr === 3) ? 7 : (seed & 1) ? 6 : 5;
-    for (let y = 3; y < size - 3; y++) {
-      for (let x = 3; x < size - 3; x++) {
-        const along = x + (size - 1 - y);
-        const across = x - (size - 1 - y);
-        // Hilt & Crossguard around along = 12..16
-        if (along >= 9 && along <= 13 && Math.abs(across) <= 1) {
-          s.setPixel(x, y, 9, 4.2, across * 0.5, -0.2, 0.8, 0);
-        } else if (along >= 14 && along <= 15 && Math.abs(across) <= 4) {
-          s.setPixel(x, y, 7, 5.0, across * 0.25, -0.4, 0.85, across < 0 ? 1 : 0);
-        } else if (along >= 16 && along <= size * 1.45 && Math.abs(across) <= 2) {
-          // 45-deg NMM blade shading
-          const nmm = (along % 7 === 0) ? 2 : (across < 0 ? 1 : (across === 0 ? -1 : 0));
-          s.setPixel(x, y, bladeMat, 4.0, across * 0.5, -0.4, 0.8, nmm);
+  // 0. Corpses & Skeletons (TV_SKELETON=1, TV_CORPSE=10)
+  if (tval === 1 || tval === 10) {
+    const isSkel = tval === 1 || sval === 0;
+    if (!isSkel) {
+      // Fallen Corpse: crimson pool + flesh + exposed ivory skull & ribcage
+      for (let y = 12; y <= 19; y++) {
+        for (let x = 4; x <= 19; x++) {
+          const dx = (x - 11.5) / 7.5, dy = (y - 15.5) / 3.8;
+          if (dx * dx + dy * dy <= 1.0) {
+            s.setPixel(x, y, 11, 2.2, dx * 0.4, dy * 0.4, 0.85, -1);
+          }
         }
       }
+      // Fallen torso & ribs
+      for (let y = 10; y <= 16; y++) {
+        for (let x = 9; x <= 17; x++) {
+          const isRib = (y === 11 || y === 13 || y === 15) && x >= 11 && x <= 16;
+          s.setPixel(x, y, isRib ? 10 : mat, isRib ? 4.2 : 3.2, -0.2, -0.3, 0.9, isRib ? 1 : -1);
+        }
+      }
+      // Fallen skull on left
+      for (let y = 8; y <= 14; y++) {
+        for (let x = 5; x <= 10; x++) {
+          const dx = (x - 7.5) / 2.8, dy = (y - 11) / 3.0;
+          if (dx * dx + dy * dy <= 1.0) {
+            s.setPixel(x, y, 10, 4.6, dx * 0.7, dy * 0.6, 0.7, 1);
+          }
+        }
+      }
+      s.setPixel(6, 11, 4, 5.0, 0, 0, 1, -2); // Eye socket
+      s.setPixel(8, 11, 4, 5.0, 0, 0, 1, -2);
+    } else {
+      // Skeleton / Skull & Crossbones
+      s.drawBresenhamLine(5, 18, 18, 12, 10, 3.0, -0.2, -0.4, 0.9, 0);
+      s.drawBresenhamLine(5, 12, 18, 18, 10, 3.1, -0.2, -0.4, 0.9, 0);
+      for (let y = 6; y <= 14; y++) {
+        for (let x = 8; x <= 15; x++) {
+          if (y >= 13 && (x === 8 || x === 15)) continue;
+          const dx = (x - 11.5) / 3.8, dy = (y - 9.5) / 4.2;
+          if (dx * dx + dy * dy <= 1.0 || (y >= 12 && x >= 9 && x <= 14)) {
+            s.setPixel(x, y, 10, 4.5, dx * 0.6, dy * 0.5, 0.8, 1);
+          }
+        }
+      }
+      s.setPixel(10, 10, 4, 5.0, 0, 0, 1, -2); // Left eye socket
+      s.setPixel(13, 10, 4, 5.0, 0, 0, 1, -2); // Right eye socket
+      s.setPixel(11, 13, 4, 4.8, 0, 0, 1, -2); // Teeth seam
+      s.setPixel(13, 13, 4, 4.8, 0, 0, 1, -2);
     }
-    if (tval === 22 || ch === "/") {
-      // Axe head extension
-      for (let y = 4; y <= 10; y++) {
-        for (let x = 11; x <= 18; x++) {
-          const d = Math.hypot(x - 16, y - 7);
-          if (d <= 4.0 && d >= 1.5) s.setPixel(x, y, bladeMat, 4.3, -0.5, -0.4, 0.75, 1);
+  }
+  // 1. Weapons (45-deg diagonal: along = x + (H-1-y), across = x - (H-1-y))
+  else if ((tval >= 19 && tval <= 23) || "|/\\}".includes(ch)) {
+    if (tval === 19 || ch === "}") {
+      // Curved Wooden Bow + String
+      s.drawBresenhamLine(7, 5, 7, 18, 10, 3.0, -0.2, 0, 0.9, 0);
+      for (let y = 5; y <= 18; y++) {
+        const bx = Math.round(7 + Math.sin(((y - 5) / 13) * Math.PI) * 7);
+        s.setPixel(bx, y, 3, 4.0, -0.3, -0.3, 0.85, 1);
+        s.setPixel(bx + 1, y, 3, 3.8, 0.3, -0.2, 0.9, 0);
+      }
+    } else {
+      const bladeMat = (dAttr === 11 || dAttr === 3) ? 7 : (seed & 1) ? 6 : 5;
+      for (let y = 3; y < size - 3; y++) {
+        for (let x = 3; x < size - 3; x++) {
+          const along = x + (size - 1 - y);
+          const across = x - (size - 1 - y);
+          if (along >= 9 && along <= 13 && Math.abs(across) <= 1) {
+            s.setPixel(x, y, 9, 4.2, across * 0.5, -0.2, 0.8, 0);
+          } else if (along >= 14 && along <= 15 && Math.abs(across) <= 4) {
+            s.setPixel(x, y, 7, 5.0, across * 0.25, -0.4, 0.85, across < 0 ? 1 : 0);
+          } else if (along >= 16 && along <= size * 1.45 && Math.abs(across) <= 2) {
+            const nmm = (along % 7 === 0) ? 2 : (across < 0 ? 1 : (across === 0 ? -1 : 0));
+            s.setPixel(x, y, bladeMat, 4.0, across * 0.5, -0.4, 0.8, nmm);
+          }
+        }
+      }
+      if (tval === 22 || ch === "/") {
+        for (let y = 4; y <= 10; y++) {
+          for (let x = 11; x <= 18; x++) {
+            const d = Math.hypot(x - 16, y - 7);
+            if (d <= 4.0 && d >= 1.5) s.setPixel(x, y, bladeMat, 4.3, -0.5, -0.4, 0.75, 1);
+          }
         }
       }
     }
   }
-  // 2. Potions (Meniscus line, rising bubbles, cork, glass highlight)
-  else if (tval === 75 || tval === 2 || ch === "!") {
+  // 1b. Ammo (Shot / Arrow / Bolt: 16..18)
+  else if (tval >= 16 && tval <= 18) {
+    s.drawBresenhamLine(6, 17, 17, 6, 3, 3.6, -0.3, -0.3, 0.9, 0);
+    s.setPixel(17, 6, 6, 4.5, -0.5, -0.5, 0.7, 2);
+    s.setPixel(16, 6, 6, 4.4, -0.5, -0.5, 0.7, 1);
+    s.setPixel(17, 7, 6, 4.4, -0.5, -0.5, 0.7, 1);
+    s.setPixel(6, 17, 10, 4.0, -0.3, -0.3, 0.9, 1);
+    s.setPixel(5, 16, 11, 4.0, -0.3, -0.3, 0.9, 1);
+  }
+  // 1c. Staves, Wands, Rods (55, 65, 66)
+  else if (tval === 55 || tval === 65 || tval === 66) {
+    const shaftMat = tval === 66 ? 6 : 3;
+    s.drawBresenhamLine(6, 18, 17, 7, shaftMat, 3.6, -0.4, -0.3, 0.85, 0);
+    for (let y = 5; y <= 8; y++) {
+      for (let x = 16; x <= 19; x++) {
+        if (Math.hypot(x - 17.5, y - 6.5) <= 1.8) {
+          s.setPixel(x, y, mat, 5.0, -0.4, -0.4, 0.8, 2);
+        }
+      }
+    }
+  }
+  // 2. Potions & Flasks (75, 2, 77)
+  else if (tval === 75 || tval === 2 || tval === 77 || ch === "!") {
     const cx = size >> 1, cy = Math.floor(size * 0.6);
     const rx = (seed & 1) ? 5.2 : 4.4, ry = 5.4;
-    // Cork + bottle neck
     for (let y = 4; y <= 7; y++) {
       for (let x = cx - 2; x <= cx + 2; x++) {
         s.setPixel(x, y, y < 6 ? 3 : 6, 3.8, (x - cx) * 0.4, -0.2, 0.9, 0);
@@ -843,7 +920,7 @@ export function synthesizeItemSprite(tval, charCode, dAttr = 1, entityId = 0, si
           const isBubble = (x === cx + 1 && y === cy + 2) || (x === cx - 1 && y === cy + 1);
           s.setPixel(
             x, y,
-            isLiquid ? mat : 12,
+            isLiquid ? (tval === 77 ? 16 : mat) : 12,
             3.6 + nz,
             dx * 0.75, dy * 0.5, nz,
             (isHighlight || isBubble) ? 3 : isMeniscus ? 2 : 0
@@ -852,8 +929,30 @@ export function synthesizeItemSprite(tval, charCode, dAttr = 1, entityId = 0, si
       }
     }
   }
-  // 3. Chests (3-plane volumetric box + iron straps height=4.4 + gold lock height=5.2)
-  else if (tval === 7 || ch === "~") {
+  // 2b. Lights / Torches / Lanterns (TV_LITE=39)
+  else if (tval === 39) {
+    for (let y = 9; y <= 18; y++) {
+      for (let x = 8; x <= 15; x++) {
+        const isFrame = x === 8 || x === 15 || y === 9 || y === 18;
+        s.setPixel(x, y, isFrame ? 5 : 16, isFrame ? 4.2 : 4.6, (x - 11.5) * 0.2, -0.2, 0.9, isFrame ? 0 : 2);
+      }
+    }
+    s.setPixel(11, 7, 7, 4.5, 0, -0.5, 0.8, 1);
+    s.setPixel(12, 7, 7, 4.5, 0, -0.5, 0.8, 1);
+  }
+  // 2c. Food / Rations (TV_FOOD=80)
+  else if (tval === 80) {
+    for (let y = 8; y <= 16; y++) {
+      for (let x = 6; x <= 17; x++) {
+        const dx = (x - 11.5) / 5.5, dy = (y - 12) / 4.0;
+        if (dx * dx + dy * dy <= 1.0) {
+          s.setPixel(x, y, sval >= 32 ? 3 : mat, 3.6, dx * 0.5, dy * 0.5, 0.8, y < 11 ? 1 : 0);
+        }
+      }
+    }
+  }
+  // 3. Chests (ONLY TV_CHEST=7 — never match generic '~'!)
+  else if (tval === 7) {
     for (let y = 6; y <= 18; y++) {
       for (let x = 4; x <= 19; x++) {
         const isStrap = x === 7 || x === 16 || y === 11;
@@ -879,7 +978,6 @@ export function synthesizeItemSprite(tval, charCode, dAttr = 1, entityId = 0, si
         s.setPixel(x, y, isPages ? 10 : bookMat, 3.5, (x - 11.5) * 0.15, -0.2, 0.9, isPages ? 1 : 0);
       }
     }
-    // Wax seal or gold clasp
     s.setPixel(11, 11, isBook ? 7 : 11, 4.8, -0.4, -0.4, 0.8, 2);
     s.setPixel(12, 11, isBook ? 7 : 11, 4.8, 0.2, -0.3, 0.9, 1);
     s.setPixel(11, 12, isBook ? 7 : 11, 4.8, -0.2, 0.3, 0.9, 1);
@@ -895,7 +993,6 @@ export function synthesizeItemSprite(tval, charCode, dAttr = 1, entityId = 0, si
         }
       }
     }
-    // Spherical gem setting
     for (let y = 5; y <= 9; y++) {
       for (let x = cx - 2; x <= cx + 2; x++) {
         if (Math.hypot(x - cx, y - 7) <= 2.3) {
@@ -918,9 +1015,41 @@ export function synthesizeItemSprite(tval, charCode, dAttr = 1, entityId = 0, si
       }
     }
   }
-  // 7. Armor / Shields / Helms / Misc
-  else {
-    const armMat = (tval >= 30 && tval <= 38) ? 6 : mat;
+  // 7. Distinct Armor Slots (Shield=34, Helm/Crown=32/33, Boots=30, Gloves=31, Cloak=35, Armor=36..38)
+  else if (tval === 34) {
+    // Kite Shield
+    for (let y = 5; y <= 18; y++) {
+      const halfW = y < 12 ? 5 : Math.max(1, 5 - Math.floor((y - 11) * 0.7));
+      for (let x = 12 - halfW; x <= 11 + halfW; x++) {
+        const isRim = x === 12 - halfW || x === 11 + halfW || y === 5;
+        s.setPixel(x, y, isRim ? 7 : 6, isRim ? 4.4 : 3.8, (x - 11.5) * 0.18, -0.2, 0.9, 0);
+      }
+    }
+    s.setPixel(11, 10, 7, 5.0, -0.3, -0.3, 0.9, 2);
+    s.setPixel(12, 10, 7, 5.0, 0.2, -0.2, 0.9, 1);
+  } else if (tval === 32 || tval === 33) {
+    // Helm / Crown
+    const isCrown = tval === 33;
+    for (let y = 7; y <= 16; y++) {
+      for (let x = 7; x <= 16; x++) {
+        if (isCrown && y < 11 && ((x - 7) % 3 === 1)) continue;
+        s.setPixel(x, y, isCrown ? 7 : 6, 4.0, (x - 11.5) * 0.2, -0.3, 0.9, isCrown ? 1 : 0);
+      }
+    }
+    if (!isCrown) {
+      for (let x = 9; x <= 14; x++) s.setPixel(x, 12, 5, 4.4, 0, 0, 1, -2);
+    }
+  } else if (tval === 30) {
+    // Pair of Boots
+    for (let y = 7; y <= 17; y++) {
+      for (let x = 6; x <= 9; x++) s.setPixel(x, y, 9, 3.6, -0.3, -0.2, 0.9, 0);
+      for (let x = 14; x <= 17; x++) s.setPixel(x, y, 9, 3.6, 0.3, -0.2, 0.9, 0);
+    }
+    for (let x = 5; x <= 10; x++) s.setPixel(x, 17, 4, 3.8, -0.2, 0.2, 0.9, -1);
+    for (let x = 13; x <= 18; x++) s.setPixel(x, 17, 4, 3.8, 0.2, 0.2, 0.9, -1);
+  } else {
+    // Armor / Cloak / Misc
+    const armMat = (tval >= 35 && tval <= 38) ? (tval === 35 ? mat : 6) : mat;
     for (let y = 5; y <= 18; y++) {
       for (let x = 6; x <= 17; x++) {
         if (y > 14 && (x < 8 || x > 15)) continue;
@@ -1087,8 +1216,8 @@ export class FrogRemasterAtlas {
     return this.getOrBuildTile(key, () => synthesizeCreatureSprite(category, charCode, dAttr, entityId, this.tileSize));
   }
 
-  getItemSprite(tval, charCode, dAttr = 1, entityId = 0) {
-    const key = `proc_itm:${tval}:${charCode}:${dAttr}:${entityId}`;
-    return this.getOrBuildTile(key, () => synthesizeItemSprite(tval, charCode, dAttr, entityId, this.tileSize));
+  getItemSprite(tval, charCode, dAttr = 1, entityId = 0, sval = 0) {
+    const key = `proc_itm:${tval}:${sval}:${charCode}:${dAttr}:${entityId}`;
+    return this.getOrBuildTile(key, () => synthesizeItemSprite(tval, charCode, dAttr, entityId, this.tileSize, sval));
   }
 }
