@@ -540,11 +540,11 @@ static void web_emit_hover_info(int ui_x, int ui_y)
         strcpy(kind, "player");
         my_strcpy(title, player_name[0] ? player_name : "You", sizeof(title));
         if (p_ptr->msp > 0)
-            strnfmt(sub, sizeof(sub), "Lv %d %s %s · HP %d/%d · SP %d/%d",
+            strnfmt(sub, sizeof(sub), "Lv %d %s %s | HP %d/%d | SP %d/%d",
                     p_ptr->lev, get_race()->name, get_class()->name,
                     p_ptr->chp, p_ptr->mhp, p_ptr->csp, p_ptr->msp);
         else
-            strnfmt(sub, sizeof(sub), "Lv %d %s %s · HP %d/%d",
+            strnfmt(sub, sizeof(sub), "Lv %d %s %s | HP %d/%d",
                     p_ptr->lev, get_race()->name, get_class()->name,
                     p_ptr->chp, p_ptr->mhp);
         hp_pct = (p_ptr->mhp > 0) ? (int)((100L * MAX(0, p_ptr->chp)) / p_ptr->mhp) : 100;
@@ -566,9 +566,9 @@ static void web_emit_hover_info(int ui_x, int ui_y)
 
         alleg = is_pet(m_ptr) ? "Pet" : (is_friendly(m_ptr) ? "Friendly" : "Hostile");
         if (m_ptr->maxhp > 0)
-            strnfmt(sub, sizeof(sub), "%s · %s (%d/%d HP)", alleg, mon_health_desc(m_ptr), m_ptr->hp, m_ptr->maxhp);
+            strnfmt(sub, sizeof(sub), "%s | %s (%d/%d HP)", alleg, mon_health_desc(m_ptr), m_ptr->hp, m_ptr->maxhp);
         else
-            strnfmt(sub, sizeof(sub), "%s · %s", alleg, mon_health_desc(m_ptr));
+            strnfmt(sub, sizeof(sub), "%s | %s", alleg, mon_health_desc(m_ptr));
     }
 
     if (c_ptr->o_idx > 0 && ((c_ptr->info & (CAVE_MARK | CAVE_VIEW)) != 0 || p_ptr->inside_battle))
@@ -810,7 +810,7 @@ static void web_emit_hover_info(int ui_x, int ui_y)
         char dbuf[256];
         if (is_player)
         {
-            strnfmt(dbuf, sizeof(dbuf), "Light Radius: %d · Depth: %s",
+            strnfmt(dbuf, sizeof(dbuf), "Light Radius: %d | Depth: %s",
                     p_ptr->cur_lite,
                     dun_level > 0 ? format("%d ft (Lv %d)", dun_level * 50, dun_level) : "Town");
             web_hover_detail(stdout, &first_d, dbuf);
@@ -819,7 +819,7 @@ static void web_emit_hover_info(int ui_x, int ui_y)
                 strnfmt(dbuf, sizeof(dbuf), "Standing on: %s", feat_name);
                 web_hover_detail(stdout, &first_d, dbuf);
             }
-            web_hover_detail(stdout, &first_d, "Click self: Wait 1 turn · Shift+Click: Rest");
+            web_hover_detail(stdout, &first_d, "Click self: Wait 1 turn | Shift+Click: Rest");
         }
         else if (m_ptr)
         {
@@ -835,12 +835,12 @@ static void web_emit_hover_info(int ui_x, int ui_y)
             for (bi = 0; bi < MAX_MON_BLOWS; bi++)
                 if (ap_ptr->blows[bi].method) blow_ct++;
 
-            strnfmt(dbuf, sizeof(dbuf), "Lv %d · AC %d · Speed %s%d (%s)",
+            strnfmt(dbuf, sizeof(dbuf), "Lv %d | AC %d | Speed %s%d (%s)",
                     (int)ap_ptr->level, mon_ac(m_ptr), mspd >= 0 ? "+" : "", mspd, rel);
             web_hover_detail(stdout, &first_d, dbuf);
 
-            strnfmt(dbuf, sizeof(dbuf), "EXP: %ld · Melee blows: %d%s",
-                    (long)ap_ptr->mexp, blow_ct, m_ptr->hold_o_idx ? " · Carrying item" : "");
+            strnfmt(dbuf, sizeof(dbuf), "EXP: %ld | Melee blows: %d%s",
+                    (long)ap_ptr->mexp, blow_ct, m_ptr->hold_o_idx ? " | Carrying item" : "");
             web_hover_detail(stdout, &first_d, dbuf);
 
             weak[0] = '\0';
@@ -887,21 +887,21 @@ static void web_emit_hover_info(int ui_x, int ui_y)
                 strnfmt(dbuf, sizeof(dbuf), "Tile: %s", feat_name);
                 web_hover_detail(stdout, &first_d, dbuf);
             }
-            web_hover_detail(stdout, &first_d, "Right-click: Inspect · Ctrl+Click: Lock Target");
+            web_hover_detail(stdout, &first_d, "Right-click: Inspect | Ctrl+Click: Lock Target");
         }
         else if (o_ptr)
         {
             int tot_w = (int)o_ptr->weight * MAX(1, (int)o_ptr->number);
             strnfmt(dbuf, sizeof(dbuf), "Weight: %d.%d lb%s",
                     tot_w / 10, tot_w % 10,
-                    feat_name[0] ? format(" · Tile: %s", feat_name) : "");
+                    feat_name[0] ? format(" | Tile: %s", feat_name) : "");
             web_hover_detail(stdout, &first_d, dbuf);
             if (o_ptr->inscription)
             {
                 strnfmt(dbuf, sizeof(dbuf), "Note: {%s}", quark_str(o_ptr->inscription));
                 web_hover_detail(stdout, &first_d, dbuf);
             }
-            web_hover_detail(stdout, &first_d, "Left-click: Travel here · Right-click: Look");
+            web_hover_detail(stdout, &first_d, "Left-click: Travel here | Right-click: Look");
         }
         else if (f_ptr)
         {
@@ -912,7 +912,7 @@ static void web_emit_hover_info(int ui_x, int ui_y)
             else if (have_flag(f_ptr->flags, FF_DOOR) && !have_flag(f_ptr->flags, FF_MOVE))
                 web_hover_detail(stdout, &first_d, "Press o (Open) or move into door");
             else
-                web_hover_detail(stdout, &first_d, "Left-click: Move / Travel · Right-click: Look");
+                web_hover_detail(stdout, &first_d, "Left-click: Move / Travel | Right-click: Look");
         }
     }
     fputs("]}\n", stdout);

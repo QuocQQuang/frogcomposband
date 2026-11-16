@@ -3818,7 +3818,7 @@ static bool travel_flow_aux(int y, int x, int n, bool wall)
 
     /* Ignore out of bounds or undiscovered terrain */
     if (!in_bounds(y, x)) return wall;
-    if (!(c_ptr->info & CAVE_AWARE)) return wall;
+    if (!(c_ptr->info & (CAVE_AWARE | CAVE_MARK | CAVE_VIEW)) && !(y == py && x == px)) return wall;
 
     /* Don't travel thru traps ... code will attempt a disarm, but this
      * can be dangerous for some players. Often, there is an alternate

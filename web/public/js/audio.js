@@ -24,6 +24,13 @@ export class SoundEngine {
     this.enabled = !!val;
   }
 
+  setVolume(val) {
+    const num = Number(val);
+    if (Number.isFinite(num)) {
+      this.volume = Math.max(0, Math.min(1, num));
+    }
+  }
+
   tone(freq, dur, type = "triangle", gainScale = 1, slideTo = null, delay = 0) {
     const ctx = this.ensureCtx();
     if (!ctx) return;

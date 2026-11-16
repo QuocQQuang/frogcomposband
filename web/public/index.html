@@ -4,101 +4,145 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>FrogComposband — Web Edition</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div id="app" class="app-shell">
-    <!-- Top Header / Toolbar -->
+    <!-- Top Command Bar -->
     <header class="topbar">
       <div class="brand">
-        <span class="brand-crest">⚔</span>
+        <span class="brand-crest" data-icon="crest"></span>
         <div class="brand-text">
           <h1>FrogComposband</h1>
           <span class="brand-sub" id="conn-badge">Connecting...</span>
         </div>
       </div>
 
-      <div class="top-status-pills" id="top-pills">
-        <div class="pill" title="Current Location">
-          <span class="pill-lbl">Depth</span>
-          <span class="pill-val" id="pill-depth">Town</span>
+      <div class="top-telemetry hidden" id="top-pills">
+        <div class="telem-item" title="Current Location">
+          <span class="telem-lbl">Location</span>
+          <span class="telem-val" id="pill-depth">Town</span>
         </div>
-        <div class="pill" title="Game Turn">
-          <span class="pill-lbl">Turn</span>
-          <span class="pill-val" id="pill-turn">0</span>
+        <div class="telem-sep"></div>
+        <div class="telem-item" title="Game Turn">
+          <span class="telem-lbl">Turn</span>
+          <span class="telem-val num" id="pill-turn">0</span>
         </div>
-        <div class="pill" title="Gold">
-          <span class="pill-lbl">Gold</span>
-          <span class="pill-val gold" id="pill-gold">0</span>
+        <div class="telem-sep"></div>
+        <div class="telem-item" title="Gold Carried">
+          <span class="telem-lbl">Gold</span>
+          <span class="telem-val num gold" id="pill-gold">0 gp</span>
         </div>
-        <div class="pill" title="Satiety / Hunger">
-          <span class="pill-lbl">Food</span>
-          <span class="pill-val" id="pill-food">Full</span>
+        <div class="telem-sep"></div>
+        <div class="telem-item" title="Satiety">
+          <span class="telem-lbl">Satiety</span>
+          <span class="telem-val" id="pill-food">Fed</span>
         </div>
       </div>
 
       <div class="toolbar-actions">
-        <div class="segmented" title="Graphics Style">
-          <button class="seg-btn active" data-graf="overhaul">Overhaul</button>
-          <button class="seg-btn" data-graf="new">16px Fix</button>
-          <button class="seg-btn" data-graf="proc32">HD 32</button>
-          <button class="seg-btn" data-graf="none">ASCII</button>
-        </div>
-
-        <button id="btn-ctrl-mode" class="tool-btn accent" title="Toggle WASD Smart vs Classic Roguelike keys (F2)">
-          Controls: <strong id="lbl-ctrl-mode">WASD</strong>
+        <button id="btn-ctrl-mode" class="tb-btn tb-mode" title="Switch WASD Smart vs Classic Keys (F2)">
+          <span data-icon="keys"></span>
+          <span class="tb-label" id="lbl-ctrl-mode">WASD</span>
         </button>
 
-        <button id="btn-fx" class="tool-btn active" title="Toggle Fog-of-War & Lighting Effects">
-          ✨FX
+        <button id="btn-sound" class="tb-btn icon-only active" title="Toggle Audio SFX" aria-label="Toggle Sound">
+          <span data-icon="soundOn"></span>
         </button>
 
-        <div class="zoom-group">
-          <button id="btn-zoom-out" class="icon-btn" title="Zoom Out">−</button>
-          <span id="lbl-zoom" class="zoom-val">200%</span>
-          <button id="btn-zoom-in" class="icon-btn" title="Zoom In">+</button>
-        </div>
+        <button id="btn-drawer-hero" class="tb-btn mobile-only" title="Toggle Hero & Pack Drawer">
+          <span data-icon="char"></span>
+          <span class="tb-label">Hero</span>
+        </button>
 
-        <button id="btn-sound" class="tool-btn active" title="Toggle Web Audio SFX">🔊</button>
-        <button id="btn-dpad" class="tool-btn" title="Toggle On-Screen D-Pad">🕹</button>
-        <button id="btn-sidebar" class="tool-btn active" title="Toggle Hero & Log Panels">◧</button>
-        <a href="/help/index.html" target="_blank" class="tool-btn" title="Open Game Manual">?</a>
-        <button id="btn-lobby" class="tool-btn danger-ghost" title="Save or Return to Lobby">Lobby</button>
+        <button id="btn-drawer-log" class="tb-btn mobile-only" title="Toggle Chronicle Log">
+          <span data-icon="read"></span>
+          <span class="tb-label">Log</span>
+        </button>
+
+        <button id="btn-sidebar" class="tb-btn icon-only desktop-only active" title="Toggle Side Panels" aria-label="Toggle Side Panels">
+          <span data-icon="sidebar"></span>
+        </button>
+
+        <button id="btn-settings" class="tb-btn icon-only" title="Display, Audio & Control Settings" aria-label="Settings">
+          <span data-icon="settings"></span>
+        </button>
+
+        <a href="/help/start.html" target="_blank" rel="noopener" class="tb-btn icon-only" title="Open Game Manual" aria-label="Game Manual">
+          <span data-icon="book"></span>
+        </a>
+
+        <button id="btn-lobby" class="tb-btn tb-menu" title="Game Menu & Pause (Esc)">
+          <span data-icon="menu"></span>
+          <span class="tb-label">Menu</span>
+        </button>
       </div>
     </header>
 
+    <!-- Compact Mobile Vitals Strip (shown <= 780px during gameplay) -->
+    <div id="mobile-vitals" class="mobile-vitals hidden">
+      <div class="mv-row">
+        <span class="mv-lv" id="mv-lv">Lv 1</span>
+        <div class="mv-bar-group">
+          <span class="mv-lbl">HP</span>
+          <div class="bar-track compact"><div class="bar-fill hp" id="mv-hp-bar" style="width:100%"></div></div>
+          <span class="mv-num num" id="mv-hp-text">0/0</span>
+        </div>
+        <div class="mv-bar-group">
+          <span class="mv-lbl">SP</span>
+          <div class="bar-track compact"><div class="bar-fill sp" id="mv-sp-bar" style="width:100%"></div></div>
+          <span class="mv-num num" id="mv-sp-text">-</span>
+        </div>
+      </div>
+      <div class="mv-meta">
+        <span id="mv-depth">Town</span>
+        <span class="gold num" id="mv-gold">0 gp</span>
+        <span id="mv-food">Fed</span>
+      </div>
+    </div>
+
     <!-- Main Workspace -->
     <main class="workspace birth-wide" id="workspace">
-      <!-- Left HUD: Hero Stats, Vitals, Inventory, Radar -->
+      <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+
+      <!-- Left HUD: Hero Plaque, Active Target, Tactical Drawer -->
       <aside id="left-panel" class="side-panel left-panel">
-        <section class="card hero-card">
+        <div class="drawer-mobile-head">
+          <span>Character &amp; Inventory</span>
+          <button class="tb-btn icon-only drawer-close-btn" data-close-drawer aria-label="Close">
+            <span data-icon="closeX"></span>
+          </button>
+        </div>
+
+        <section class="panel hero-card">
           <div class="hero-header">
-            <div>
+            <div class="hero-id">
               <div class="hero-name" id="hero-name">Adventurer</div>
               <div class="hero-sub" id="hero-sub">Create or load a character</div>
             </div>
-            <div class="hero-lv" id="hero-lv">Lv 1</div>
+            <div class="hero-lv num" id="hero-lv">Lv 1</div>
           </div>
 
           <div class="bars">
             <div class="bar-row">
-              <div class="bar-meta"><span>HP</span><span id="hp-text">0 / 0</span></div>
+              <div class="bar-meta"><span>Vitality (HP)</span><span class="num" id="hp-text">0 / 0</span></div>
               <div class="bar-track"><div class="bar-fill hp" id="hp-bar" style="width: 100%"></div></div>
             </div>
             <div class="bar-row">
-              <div class="bar-meta"><span>SP</span><span id="sp-text">0 / 0</span></div>
+              <div class="bar-meta"><span>Mana (SP)</span><span class="num" id="sp-text">0 / 0</span></div>
               <div class="bar-track"><div class="bar-fill sp" id="sp-bar" style="width: 100%"></div></div>
             </div>
             <div class="bar-row">
-              <div class="bar-meta"><span>XP</span><span id="xp-text">0</span></div>
+              <div class="bar-meta"><span>Experience</span><span class="num" id="xp-text">0</span></div>
               <div class="bar-track thin"><div class="bar-fill xp" id="xp-bar" style="width: 0%"></div></div>
             </div>
           </div>
 
           <div class="combat-stats">
-            <div class="stat-chip"><span>AC</span><strong id="stat-ac">0</strong></div>
-            <div class="stat-chip"><span>Speed</span><strong id="stat-spd">+0</strong></div>
-            <div class="stat-chip"><span>Light</span><strong id="stat-lite">0</strong></div>
+            <div class="stat-box"><span>AC</span><strong class="num" id="stat-ac">0</strong></div>
+            <div class="stat-box"><span>Speed</span><strong class="num" id="stat-spd">+0</strong></div>
+            <div class="stat-box"><span>Light</span><strong class="num" id="stat-lite">0</strong></div>
           </div>
 
           <div class="attr-grid" id="attr-grid">
@@ -113,18 +157,18 @@
           <div class="status-flags" id="status-flags"></div>
         </section>
 
-        <!-- Target Card (shown when targeting) -->
-        <section class="card target-card hidden" id="target-card">
-          <div class="card-title-row" style="margin-bottom:4px">
-            <span class="card-title">🎯 Active Target</span>
-            <button class="mini-btn" id="btn-retarget" title="Re-target (*)">Switch</button>
+        <!-- Active Target Frame -->
+        <section class="panel target-card hidden" id="target-card">
+          <div class="panel-head">
+            <span class="panel-title"><span data-icon="target"></span> Locked Target</span>
+            <button class="mini-btn" id="btn-retarget" title="Cycle Target (*)">Switch</button>
           </div>
           <div class="target-name" id="target-name">-</div>
           <div class="bar-track thin"><div class="bar-fill hp" id="target-hp-bar" style="width: 100%"></div></div>
         </section>
 
-        <!-- Tabs: Nearby / Pack / Gear -->
-        <section class="card drawer-card">
+        <!-- Tactical Tabs: Nearby / Pack / Gear -->
+        <section class="panel drawer-card">
           <div class="tab-header">
             <button class="tab-btn active" data-tab="radar" id="tab-btn-radar">Nearby</button>
             <button class="tab-btn" data-tab="inven" id="tab-btn-inven">Pack</button>
@@ -142,7 +186,7 @@
         </section>
       </aside>
 
-      <!-- Center Viewport: HD Canvas + Overlays + Hotbar -->
+      <!-- Center Viewport: Dungeon Canvas + Contextual Prompts + Single-Row Action Dock -->
       <section class="stage-wrap">
         <div class="canvas-stage" id="canvas-stage">
           <canvas id="game-canvas"></canvas>
@@ -162,119 +206,322 @@
           <!-- Toast Banner -->
           <div id="toast-banner" class="toast-banner hidden"></div>
 
-          <!-- Context-Aware Prompt Actions (dynamically populated by app.js) -->
+          <!-- Context-Aware Prompt Actions -->
           <div id="prompt-actions" class="prompt-actions hidden"></div>
 
           <!-- Optional On-Screen Touch / Click D-Pad -->
           <div id="touch-dpad" class="touch-dpad hidden">
-            <button data-dir="7">↖</button><button data-dir="8">↑</button><button data-dir="9">↗</button>
-            <button data-dir="4">←</button><button data-key="44" class="center" title="Wait 1 Turn">·</button><button data-dir="6">→</button>
-            <button data-dir="1">↙</button><button data-dir="2">↓</button><button data-dir="3">↘</button>
+            <button data-dir="7" aria-label="Move Northwest">↖</button>
+            <button data-dir="8" aria-label="Move North">↑</button>
+            <button data-dir="9" aria-label="Move Northeast">↗</button>
+            <button data-dir="4" aria-label="Move West">←</button>
+            <button data-key="44" class="center" title="Wait 1 Turn" aria-label="Wait 1 Turn">·</button>
+            <button data-dir="6" aria-label="Move East">→</button>
+            <button data-dir="1" aria-label="Move Southwest">↙</button>
+            <button data-dir="2" aria-label="Move South">↓</button>
+            <button data-dir="3" aria-label="Move Southeast">↘</button>
           </div>
         </div>
 
-        <!-- Modern Action Hotbar -->
-        <div class="hotbar" id="hotbar">
-          <button class="hb-btn" data-cmd="," data-wasd="X" data-classic="." title="Wait / Stay 1 Turn"><kbd>,</kbd><span>⏳</span><small>Wait</small></button>
-          <button class="hb-btn" data-cmd="R" title="Rest until healed (R)"><kbd>R</kbd><span>⛺</span><small>Rest</small></button>
-          <button class="hb-btn" data-cmd="s" title="Search around you (s)"><kbd>s</kbd><span>🔍</span><small>Search</small></button>
-          <button class="hb-btn" data-cmd="o" title="Open door / chest (o)"><kbd>o</kbd><span>🚪</span><small>Open</small></button>
-          <button class="hb-btn" data-cmd="c" title="Close door (c)"><kbd>c</kbd><span>🔒</span><small>Close</small></button>
-          <button class="hb-btn" data-cmd="D" title="Disarm trap (D)"><kbd>D</kbd><span>⚙</span><small>Disarm</small></button>
-          <button class="hb-btn" data-cmd="g" title="Pick up items (g)"><kbd>g</kbd><span>🎒</span><small>Get</small></button>
-          <button class="hb-btn" data-cmd="d" title="Drop item (d)"><kbd>d</kbd><span>📤</span><small>Drop</small></button>
-          <button class="hb-btn" data-cmd="w" title="Wear / wield item (w)"><kbd>w</kbd><span>🧤</span><small>Wear</small></button>
-          <button class="hb-btn" data-cmd="q" title="Quaff potion (q)"><kbd>q</kbd><span>🧪</span><small>Quaff</small></button>
-          <button class="hb-btn" data-cmd="r" title="Read scroll (r)"><kbd>r</kbd><span>📜</span><small>Read</small></button>
-          <button class="hb-btn" data-cmd="E" title="Eat food (E)"><kbd>E</kbd><span>🍖</span><small>Eat</small></button>
-          <button class="hb-btn" data-cmd="f" title="Fire missile / Target (f)"><kbd>f</kbd><span>🏹</span><small>Fire</small></button>
-          <button class="hb-btn" data-cmd="m" title="Cast spell (m)"><kbd>m</kbd><span>✨</span><small>Cast</small></button>
-          <button class="hb-btn" data-cmd="U" title="Use racial/class power (U)"><kbd>U</kbd><span>⚡</span><small>Power</small></button>
-          <button class="hb-btn" data-cmd="z" title="Zap rod (z)"><kbd>z</kbd><span>🪄</span><small>Zap</small></button>
-          <button class="hb-btn" data-cmd="a" title="Aim wand (a)"><kbd>a</kbd><span>🎇</span><small>Aim</small></button>
-          <button class="hb-btn" data-cmd="u" title="Use staff (u)"><kbd>u</kbd><span>🦯</span><small>Staff</small></button>
-          <button class="hb-btn" data-cmd="l" title="Look / Inspect (l)"><kbd>l</kbd><span>👁</span><small>Look</small></button>
-          <button class="hb-btn" data-cmd="i" title="Inventory (i)"><kbd>i</kbd><span>📦</span><small>Pack</small></button>
-          <button class="hb-btn" data-cmd="e" title="Equipment (e)"><kbd>e</kbd><span>⚔</span><small>Gear</small></button>
-          <button class="hb-btn" data-cmd="C" title="Character Sheet (C)"><kbd>C</kbd><span>🛡</span><small>Char</small></button>
-          <button class="hb-btn" data-cmd="M" title="Dungeon Map (M)"><kbd>M</kbd><span>🗺</span><small>Map</small></button>
-          <button class="hb-btn" data-cmd="<" title="Go up stairs (<)"><kbd>&lt;</kbd><span>🔼</span><small>Up</small></button>
-          <button class="hb-btn" data-cmd=">" title="Go down stairs (>)"><kbd>&gt;</kbd><span>🔽</span><small>Down</small></button>
-          <button class="hb-btn" data-key="19" data-allow-always="1" title="Save game (^S)"><kbd>^S</kbd><span>💾</span><small>Save</small></button>
+        <!-- Categorized Single-Row Action Dock -->
+        <div class="hotbar-dock" id="hotbar">
+          <div class="dock-groups" role="tablist" aria-label="Action Categories">
+            <button class="dock-tab active" data-dock-group="core" title="Movement, Combat & World">Explore</button>
+            <button class="dock-tab" data-dock-group="items" title="Consumables, Devices & Pack">Items</button>
+            <button class="dock-tab" data-dock-group="info" title="Inspection, Map & Character">Ledger</button>
+          </div>
+
+          <div class="dock-buttons">
+            <!-- Group: core -->
+            <button class="hb-btn" data-group="core" data-cmd="," data-wasd="X" data-classic="." title="Wait 1 Turn"><kbd>,</kbd><span class="hb-ico" data-icon="wait"></span><small>Wait</small></button>
+            <button class="hb-btn" data-group="core" data-cmd="R" title="Rest until healed (R)"><kbd>R</kbd><span class="hb-ico" data-icon="rest"></span><small>Rest</small></button>
+            <button class="hb-btn" data-group="core" data-cmd="s" title="Search around you (s)"><kbd>s</kbd><span class="hb-ico" data-icon="search"></span><small>Search</small></button>
+            <button class="hb-btn" data-group="core" data-cmd="o" title="Open door / chest (o)"><kbd>o</kbd><span class="hb-ico" data-icon="open"></span><small>Open</small></button>
+            <button class="hb-btn" data-group="core" data-cmd="c" title="Close door (c)"><kbd>c</kbd><span class="hb-ico" data-icon="close"></span><small>Close</small></button>
+            <button class="hb-btn" data-group="core" data-cmd="D" title="Disarm trap (D)"><kbd>D</kbd><span class="hb-ico" data-icon="disarm"></span><small>Disarm</small></button>
+            <button class="hb-btn" data-group="core" data-cmd="g" title="Pick up items (g)"><kbd>g</kbd><span class="hb-ico" data-icon="get"></span><small>Get</small></button>
+            <button class="hb-btn" data-group="core" data-cmd="f" title="Fire missile / Target (f)"><kbd>f</kbd><span class="hb-ico" data-icon="fire"></span><small>Fire</small></button>
+            <button class="hb-btn" data-group="core" data-cmd="m" title="Cast spell (m)"><kbd>m</kbd><span class="hb-ico" data-icon="cast"></span><small>Cast</small></button>
+            <button class="hb-btn" data-group="core" data-cmd="U" title="Use racial/class power (U)"><kbd>U</kbd><span class="hb-ico" data-icon="power"></span><small>Power</small></button>
+            <button class="hb-btn" data-group="core" data-cmd="<" title="Go up stairs / enter (<)"><kbd>&lt;</kbd><span class="hb-ico" data-icon="up"></span><small>Up</small></button>
+            <button class="hb-btn" data-group="core" data-cmd=">" title="Go down stairs (>)"><kbd>&gt;</kbd><span class="hb-ico" data-icon="down"></span><small>Down</small></button>
+
+            <!-- Group: items -->
+            <button class="hb-btn hidden-group" data-group="items" data-cmd="q" title="Quaff potion (q)"><kbd>q</kbd><span class="hb-ico" data-icon="quaff"></span><small>Quaff</small></button>
+            <button class="hb-btn hidden-group" data-group="items" data-cmd="r" title="Read scroll (r)"><kbd>r</kbd><span class="hb-ico" data-icon="read"></span><small>Read</small></button>
+            <button class="hb-btn hidden-group" data-group="items" data-cmd="E" title="Eat food (E)"><kbd>E</kbd><span class="hb-ico" data-icon="eat"></span><small>Eat</small></button>
+            <button class="hb-btn hidden-group" data-group="items" data-cmd="w" title="Wear / wield item (w)"><kbd>w</kbd><span class="hb-ico" data-icon="wear"></span><small>Wear</small></button>
+            <button class="hb-btn hidden-group" data-group="items" data-cmd="d" title="Drop item (d)"><kbd>d</kbd><span class="hb-ico" data-icon="drop"></span><small>Drop</small></button>
+            <button class="hb-btn hidden-group" data-group="items" data-cmd="z" title="Zap rod (z)"><kbd>z</kbd><span class="hb-ico" data-icon="zap"></span><small>Zap</small></button>
+            <button class="hb-btn hidden-group" data-group="items" data-cmd="a" title="Aim wand (a)"><kbd>a</kbd><span class="hb-ico" data-icon="aim"></span><small>Aim</small></button>
+            <button class="hb-btn hidden-group" data-group="items" data-cmd="u" title="Use staff (u)"><kbd>u</kbd><span class="hb-ico" data-icon="staff"></span><small>Staff</small></button>
+
+            <!-- Group: info -->
+            <button class="hb-btn hidden-group" data-group="info" data-cmd="l" title="Look / Inspect (l)"><kbd>l</kbd><span class="hb-ico" data-icon="eye"></span><small>Look</small></button>
+            <button class="hb-btn hidden-group" data-group="info" data-cmd="i" title="Inventory (i)"><kbd>i</kbd><span class="hb-ico" data-icon="pack"></span><small>Pack</small></button>
+            <button class="hb-btn hidden-group" data-group="info" data-cmd="e" title="Equipment (e)"><kbd>e</kbd><span class="hb-ico" data-icon="gear"></span><small>Gear</small></button>
+            <button class="hb-btn hidden-group" data-group="info" data-cmd="C" title="Character Sheet (C)"><kbd>C</kbd><span class="hb-ico" data-icon="char"></span><small>Char</small></button>
+            <button class="hb-btn hidden-group" data-group="info" data-cmd="M" title="Dungeon Map (M)"><kbd>M</kbd><span class="hb-ico" data-icon="map"></span><small>Map</small></button>
+          </div>
+
+          <button class="hb-btn hb-save" data-key="19" data-allow-always="1" title="Save game (^S)">
+            <kbd>^S</kbd><span class="hb-ico" data-icon="save"></span><small>Save</small>
+          </button>
         </div>
       </section>
 
-      <!-- Right HUD: Live Message Log & Quick Controls Guide -->
+      <!-- Right HUD: Full-Height Dungeon Chronicle -->
       <aside id="right-panel" class="side-panel right-panel">
-        <section class="card log-card">
-          <div class="card-title-row">
-            <span class="card-title">📜 Chronicle</span>
+        <div class="drawer-mobile-head">
+          <span>Dungeon Chronicle</span>
+          <button class="tb-btn icon-only drawer-close-btn" data-close-drawer aria-label="Close">
+            <span data-icon="closeX"></span>
+          </button>
+        </div>
+
+        <section class="panel log-card">
+          <div class="panel-head">
+            <span class="panel-title"><span data-icon="read"></span> Chronicle</span>
             <div class="log-head-actions">
-              <button id="btn-log-latest" class="mini-btn hidden" title="Jump to latest log">↓ Latest</button>
-              <span class="hint-chip" id="ctx-badge">Lobby</span>
+              <button id="btn-log-latest" class="mini-btn hidden" title="Jump to latest entry">Latest</button>
+              <button id="btn-controls-ref" class="mini-btn" title="Controls & Keybindings">Keys</button>
+              <span class="ctx-tag" id="ctx-badge">Title</span>
             </div>
           </div>
           <div id="msg-log" class="msg-log"></div>
         </section>
-
-        <section class="card controls-card">
-          <div class="card-title-row" style="margin-bottom:4px">
-            <span class="card-title">🎮 Controls</span>
-            <span class="hint-chip" id="ctrl-mode-chip">WASD</span>
-          </div>
-          <ul class="ctrl-list" id="ctrl-list">
-            <li><strong>Left Click Map</strong> Walk / Attack / Auto-Travel</li>
-            <li><strong>Right Click</strong> Look at Tile / Cancel Menu</li>
-            <li><strong>Ctrl / Mid Click</strong> Lock Target Immediately</li>
-            <li><strong>Shift + Click Self</strong> Rest Until Healed</li>
-            <li><strong>WASD + QEZC</strong> 8-Way Move (Shift = Run)</li>
-            <li><strong>X / Numpad</strong> Wait 1 Turn / Numpad Move</li>
-            <li><strong>Scroll Wheel</strong> Smooth Zoom / Scroll Docs</li>
-            <li><strong>F2</strong> Switch WASD ↔ Classic Keys</li>
-          </ul>
-        </section>
       </aside>
     </main>
 
-    <!-- Title / Save Lobby Modal -->
-    <div id="lobby-modal" class="modal-backdrop">
-      <div class="lobby-dialog">
-        <div class="lobby-hero">
-          <div class="lobby-badge">WEB EDITION · HD TILES &amp; FULL MOUSE</div>
-          <h2>FrogComposband</h2>
-          <p>Deep traditional roguelike mechanics with remastered 16/32px tiles, click-to-travel, instant target locking, smart WASD, interactive pack/gear panels, and synthesized audio.</p>
-        </div>
+    <!-- Full-Bleed Atmospheric Title Screen -->
+    <div id="lobby-modal" class="title-screen">
+      <div class="title-frame">
+        <section class="title-showcase">
+          <canvas id="title-diorama" class="title-diorama" aria-hidden="true"></canvas>
+          <div class="title-vignette"></div>
+          <div class="title-emblem-block">
+            <div class="title-kicker">A Traditional Roguelike · Web Edition</div>
+            <h2 class="title-wordmark">FrogComposband</h2>
+            <p class="title-lore">Descend into shifting warrens, forge unlikely alliances, master arcane realms, and confront the Serpent of Chaos.</p>
+            <div class="title-footer-links">
+              <button id="btn-title-settings" class="ghost-btn">
+                <span data-icon="settings"></span> Settings
+              </button>
+              <button id="btn-title-controls" class="ghost-btn">
+                <span data-icon="keys"></span> Controls
+              </button>
+              <a href="/help/start.html" target="_blank" rel="noopener" class="ghost-btn">
+                <span data-icon="book"></span> Manual
+              </a>
+            </div>
+          </div>
+        </section>
 
-        <div class="lobby-grid">
-          <div class="lobby-box">
-            <h3>Start New Adventure</h3>
-            <label class="field-lbl" for="new-hero-name">Character Name</label>
+        <section class="title-ledger">
+          <div class="ledger-block">
+            <div class="ledger-heading">
+              <span class="ledger-num">I</span>
+              <h3>New Expedition</h3>
+            </div>
+            <label class="field-lbl" for="new-hero-name">Hero Name</label>
             <div class="inline-row">
               <input id="new-hero-name" type="text" maxlength="15" value="PLAYER" placeholder="Enter hero name..." />
-              <button id="btn-start-new" class="primary-btn">New Hero</button>
+              <button id="btn-start-new" class="primary-btn">
+                <span data-icon="play"></span> Embark
+              </button>
             </div>
-            <p class="small-note">Click options or use keyboard during character creation. Right-click goes back.</p>
+            <p class="small-note">Click options or type keys during character birth. Right-click steps back.</p>
           </div>
 
-          <div class="lobby-box">
-            <h3>Continue Saved Run</h3>
+          <div class="ledger-divider"></div>
+
+          <div class="ledger-block ledger-saves">
+            <div class="ledger-heading">
+              <span class="ledger-num">II</span>
+              <h3>Continue Expedition</h3>
+            </div>
             <div id="save-list" class="save-list">
-              <div class="empty-hint">Scanning saves...</div>
+              <div class="empty-hint">Scanning saved chronicles...</div>
+            </div>
+          </div>
+
+          <div class="title-engine-status" id="title-conn-status">Engine ready</div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Pause / Game Menu Modal -->
+    <div id="exit-modal" class="modal-backdrop hidden">
+      <div class="game-dialog pause-dialog" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-kicker">Expedition Paused</div>
+            <h3 id="pause-title">Game Menu</h3>
+          </div>
+          <button id="btn-exit-cancel" class="tb-btn icon-only" aria-label="Resume">
+            <span data-icon="closeX"></span>
+          </button>
+        </div>
+
+        <p id="exit-modal-desc" class="dialog-desc">Save your current progress cleanly before returning to the title screen.</p>
+
+        <div class="menu-stack">
+          <button id="btn-pause-resume" class="primary-btn full">
+            <span data-icon="play"></span> Resume Expedition
+          </button>
+          <button id="btn-exit-save" class="iron-btn full">
+            <span data-icon="save"></span> Save &amp; Return to Title
+          </button>
+          <div class="menu-split">
+            <button id="btn-pause-settings" class="iron-btn">
+              <span data-icon="settings"></span> Settings
+            </button>
+            <button id="btn-pause-controls" class="iron-btn">
+              <span data-icon="keys"></span> Controls
+            </button>
+          </div>
+          <a href="/help/start.html" target="_blank" rel="noopener" class="iron-btn full">
+            <span data-icon="book"></span> Open Game Manual
+          </a>
+          <div class="abandon-wrap" id="abandon-wrap">
+            <button id="btn-exit-discard" class="danger-btn full">Abandon &amp; Exit (Unsaved)</button>
+            <div id="abandon-confirm" class="confirm-bar hidden">
+              <span>Discard unsaved progress?</span>
+              <button id="btn-abandon-yes" class="danger-btn">Confirm Exit</button>
+              <button id="btn-abandon-no" class="ghost-btn">Keep Playing</button>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Safe Exit Confirmation Modal -->
-    <div id="exit-modal" class="modal-backdrop hidden">
-      <div class="exit-dialog">
-        <h3>Return to Lobby?</h3>
-        <p id="exit-modal-desc">Save your current progress cleanly before returning to the lobby.</p>
-        <div class="exit-actions">
-          <button id="btn-exit-save" class="primary-btn">💾 Save &amp; Exit to Lobby</button>
-          <button id="btn-exit-discard" class="tool-btn danger-ghost">Force Exit (Unsaved)</button>
-          <button id="btn-exit-cancel" class="tool-btn">Cancel</button>
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-backdrop hidden">
+      <div class="game-dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-kicker">Preferences</div>
+            <h3 id="settings-title">Game Settings</h3>
+          </div>
+          <button id="btn-settings-close" class="tb-btn icon-only" aria-label="Close Settings">
+            <span data-icon="closeX"></span>
+          </button>
+        </div>
+
+        <div class="settings-list">
+          <div class="setting-row column">
+            <div class="setting-info">
+              <strong>Tileset &amp; Visual Mode</strong>
+              <span>Choose between procedural overhaul sprites, 16/32px sheets, or classic ASCII.</span>
+            </div>
+            <div class="segmented" role="group" aria-label="Graphics Style">
+              <button class="seg-btn active" data-graf="overhaul">Overhaul</button>
+              <button class="seg-btn" data-graf="new">16px Fix</button>
+              <button class="seg-btn" data-graf="proc32">HD 32</button>
+              <button class="seg-btn" data-graf="old">8px</button>
+              <button class="seg-btn" data-graf="none">ASCII</button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <strong>Control Scheme (F2)</strong>
+              <span>WASD Smart maps movement to WASD+QEZC; Classic uses Numpad &amp; Vi/Angband keys.</span>
+            </div>
+            <div class="segmented">
+              <button class="seg-btn" id="set-ctrl-wasd">WASD</button>
+              <button class="seg-btn" id="set-ctrl-classic">Classic</button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <strong>Map Zoom</strong>
+              <span>Adjust dungeon tile magnification (also via mouse wheel).</span>
+            </div>
+            <div class="zoom-group">
+              <button id="btn-zoom-out" class="iron-btn compact" aria-label="Zoom Out">−</button>
+              <span id="lbl-zoom" class="zoom-val num">200%</span>
+              <button id="btn-zoom-in" class="iron-btn compact" aria-label="Zoom In">+</button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <strong>Fog-of-War &amp; Lighting FX</strong>
+              <span>Dim remembered out-of-sight dungeon tiles.</span>
+            </div>
+            <button id="btn-fx" class="toggle-btn active">Enabled</button>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <strong>Synthesized Audio SFX</strong>
+              <span>Master toggle and volume for Web Audio cues.</span>
+            </div>
+            <div class="audio-controls">
+              <input id="rng-volume" type="range" min="0" max="100" value="28" aria-label="SFX Volume" />
+              <button id="btn-sound-settings" class="toggle-btn active">On</button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <strong>On-Screen Touch D-Pad</strong>
+              <span>Display 8-way directional pad overlay on the dungeon viewport.</span>
+            </div>
+            <button id="btn-dpad" class="toggle-btn">Hidden</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls & Keybindings Reference Modal -->
+    <div id="controls-modal" class="modal-backdrop hidden">
+      <div class="game-dialog controls-dialog" role="dialog" aria-modal="true" aria-labelledby="controls-title">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-kicker">Field Manual</div>
+            <h3 id="controls-title">Controls &amp; Keybindings</h3>
+          </div>
+          <button id="btn-controls-close" class="tb-btn icon-only" aria-label="Close Controls">
+            <span data-icon="closeX"></span>
+          </button>
+        </div>
+
+        <div class="controls-columns">
+          <div class="ctrl-group">
+            <h4>Mouse &amp; Pointer</h4>
+            <ul class="ctrl-list">
+              <li><strong>Left Click Map</strong> Walk, Attack, or Auto-Travel</li>
+              <li><strong>Right Click</strong> Inspect Tile or Cancel Menu</li>
+              <li><strong>Ctrl / Mid Click</strong> Lock Target Immediately</li>
+              <li><strong>Shift + Click Self</strong> Rest Until Healed</li>
+              <li><strong>Scroll Wheel</strong> Zoom Map or Scroll Menus</li>
+            </ul>
+          </div>
+          <div class="ctrl-group">
+            <h4>Keyboard (<span id="ctrl-mode-chip">WASD</span>)</h4>
+            <ul class="ctrl-list" id="ctrl-list"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over / Victory Run Summary Modal -->
+    <div id="endgame-modal" class="modal-backdrop hidden">
+      <div class="game-dialog endgame-dialog" role="dialog" aria-modal="true" aria-labelledby="endgame-title">
+        <div class="endgame-crest" id="endgame-crest"></div>
+        <div class="dialog-kicker centered" id="endgame-kicker">Run Concluded</div>
+        <h3 class="endgame-title" id="endgame-title">Fallen in the Depths</h3>
+        <p class="endgame-sub" id="endgame-sub"></p>
+
+        <div class="endgame-stats" id="endgame-stats"></div>
+        <div class="endgame-chronicle" id="endgame-chronicle"></div>
+
+        <div class="menu-split" style="margin-top:16px">
+          <button id="btn-endgame-new" class="primary-btn">New Expedition</button>
+          <button id="btn-endgame-title" class="iron-btn">Return to Title</button>
         </div>
       </div>
     </div>

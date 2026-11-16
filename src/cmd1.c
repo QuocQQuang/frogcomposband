@@ -6362,7 +6362,7 @@ static bool travel_abort(void)
     if (stop) return (TRUE);
 
     /* Cannot travel when blind */
-    if (p_ptr->blind || no_lite())
+    if (p_ptr->blind)
     {
         msg_print("You cannot see!");
         return (TRUE);

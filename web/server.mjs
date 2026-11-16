@@ -320,7 +320,8 @@ const server = http.createServer((req, res) => {
   }
 
   if (url.pathname.startsWith("/help/")) {
-    const rel = decodeURIComponent(url.pathname.slice("/help/".length));
+    let rel = decodeURIComponent(url.pathname.slice("/help/".length));
+    if (!rel || rel === "index.html") rel = "start.html";
     const target = path.resolve(HELP_HTML_DIR, rel);
     if (!target.startsWith(HELP_HTML_DIR)) {
       res.writeHead(403);

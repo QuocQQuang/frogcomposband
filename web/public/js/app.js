@@ -1,6 +1,8 @@
 import { SoundEngine } from "./audio.js";
 import { GameRenderer } from "./renderer.js";
 import { InputController } from "./input.js";
+import { ICONS, iconHtml } from "./icons.js";
+import { startTitleDiorama } from "./titleArt.js";
 
 const PREFS_KEY = "frogweb_prefs_v1";
 
@@ -43,6 +45,9 @@ class FrogWebApp {
     this._lastMsgsSig = "";
     this._logPinnedBottom = true;
     this._updatingMsgs = false;
+    this._stopTitleArt = null;
+    this._voluntaryExit = false;
+    this._lastRunSnapshot = null;
 
     this.prefs = this.loadPrefs();
 
@@ -59,11 +64,34 @@ class FrogWebApp {
       onShowToast: (text) => this.showToast(text),
     });
 
+    this.injectStaticIcons();
     this.applySavedPrefs();
     this.bindUI();
+    this.syncControlModeUI();
     this.connectWebSocket();
     this.refreshSaves();
+    this.startTitleArt();
     this.startRenderLoop();
+  }
+
+  injectStaticIcons() {
+    document.querySelectorAll("[data-icon]").forEach((el) => {
+      const name = el.dataset.icon;
+      if (ICONS[name]) el.innerHTML = ICONS[name];
+    });
+  }
+
+  startTitleArt() {
+    if (this._stopTitleArt) return;
+    const c = document.getElementById("title-diorama");
+    if (c) this._stopTitleArt = startTitleDiorama(c);
+  }
+
+  stopTitleArt() {
+    if (this._stopTitleArt) {
+      this._stopTitleArt();
+      this._stopTitleArt = null;
+    }
   }
 
   loadPrefs() {
@@ -98,22 +126,72 @@ class FrogWebApp {
     }
     if (typeof this.prefs.fxEnabled === "boolean") {
       this.renderer.fxEnabled = this.prefs.fxEnabled;
-      document.getElementById("btn-fx").classList.toggle("active", this.renderer.fxEnabled);
+      this.syncToggleButton("btn-fx", this.renderer.fxEnabled, "Enabled", "Disabled");
+    }
+    if (typeof this.prefs.soundVolume === "number") {
+      this.sound.setVolume(this.prefs.soundVolume);
+    }
+    const volRange = document.getElementById("rng-volume");
+    if (volRange) {
+      volRange.value = String(Math.round(this.sound.volume * 100));
     }
     if (typeof this.prefs.soundEnabled === "boolean") {
       this.sound.setEnabled(this.prefs.soundEnabled);
-      const sndBtn = document.getElementById("btn-sound");
-      sndBtn.classList.toggle("active", this.prefs.soundEnabled);
-      sndBtn.textContent = this.prefs.soundEnabled ? "🔊" : "🔇";
     }
+    this.syncSoundUI();
+
     if (this.prefs.dpadVisible) {
       document.getElementById("touch-dpad").classList.remove("hidden");
-      document.getElementById("btn-dpad").classList.add("active");
+      this.syncToggleButton("btn-dpad", true, "Visible", "Hidden");
     }
     if (this.prefs.sidebarsVisible === false) {
       document.getElementById("workspace").classList.add("no-sidebars");
       document.getElementById("btn-sidebar").classList.remove("active");
     }
+  }
+
+  syncToggleButton(id, active, onText, offText) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle("active", active);
+    el.textContent = active ? onText : offText;
+  }
+
+  syncSoundUI() {
+    const on = this.sound.enabled;
+    const tbBtn = document.getElementById("btn-sound");
+    if (tbBtn) {
+      tbBtn.classList.toggle("active", on);
+      tbBtn.innerHTML = iconHtml(on ? "soundOn" : "soundOff");
+    }
+    this.syncToggleButton("btn-sound-settings", on, "On", "Muted");
+  }
+
+  hasAnyModalOpen() {
+    return (
+      !document.getElementById("exit-modal").classList.contains("hidden") ||
+      !document.getElementById("settings-modal").classList.contains("hidden") ||
+      !document.getElementById("controls-modal").classList.contains("hidden") ||
+      !document.getElementById("endgame-modal").classList.contains("hidden")
+    );
+  }
+
+  syncModalPauseState() {
+    this.input.setPaused(this.hasAnyModalOpen());
+  }
+
+  closeDrawers() {
+    document.body.classList.remove("drawer-hero", "drawer-log");
+    document.getElementById("drawer-backdrop").classList.add("hidden");
+  }
+
+  toggleDrawer(which) {
+    const cls = which === "hero" ? "drawer-hero" : "drawer-log";
+    const other = which === "hero" ? "drawer-log" : "drawer-hero";
+    document.body.classList.remove(other);
+    const opening = !document.body.classList.contains(cls);
+    document.body.classList.toggle(cls, opening);
+    document.getElementById("drawer-backdrop").classList.toggle("hidden", !opening);
   }
 
   bindUI() {
@@ -127,6 +205,74 @@ class FrogWebApp {
       }
     });
 
+    // Global Escape handler for UI modals & mobile drawers
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.key !== "Escape") return;
+
+        const settingsEl = document.getElementById("settings-modal");
+        if (!settingsEl.classList.contains("hidden")) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          settingsEl.classList.add("hidden");
+          this.syncModalPauseState();
+          return;
+        }
+
+        const ctrlEl = document.getElementById("controls-modal");
+        if (!ctrlEl.classList.contains("hidden")) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          ctrlEl.classList.add("hidden");
+          this.syncModalPauseState();
+          return;
+        }
+
+        const exitEl = document.getElementById("exit-modal");
+        if (!exitEl.classList.contains("hidden")) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          this.closePauseModal();
+          return;
+        }
+
+        const endEl = document.getElementById("endgame-modal");
+        if (!endEl.classList.contains("hidden")) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          endEl.classList.add("hidden");
+          this.syncModalPauseState();
+          return;
+        }
+
+        if (document.body.classList.contains("drawer-hero") || document.body.classList.contains("drawer-log")) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          this.closeDrawers();
+          return;
+        }
+
+        // In normal dungeon command mode (not inside menu/prompt/targeting), Esc opens Game Menu
+        const st = this.renderer.state || {};
+        if (
+          this.running &&
+          st.gen &&
+          st.dungeon &&
+          !st.icky &&
+          st.cmdReady &&
+          !st.busy &&
+          (!st.promptKind || st.promptKind === "none")
+        ) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          this.openExitModal(st);
+        }
+      },
+      true
+    );
+
+    // Chronicle scroll pinning
     const msgBox = document.getElementById("msg-log");
     const latestBtn = document.getElementById("btn-log-latest");
     if (msgBox) {
@@ -156,14 +302,15 @@ class FrogWebApp {
       });
     });
 
-    // Control mode toggle
+    // Control mode toggles (topbar + settings)
     document.getElementById("btn-ctrl-mode").addEventListener("click", () => this.toggleControlMode());
+    document.getElementById("set-ctrl-wasd").addEventListener("click", () => this.setControlMode("wasd"));
+    document.getElementById("set-ctrl-classic").addEventListener("click", () => this.setControlMode("classic"));
 
     // FX toggle
-    const fxBtn = document.getElementById("btn-fx");
-    fxBtn.addEventListener("click", () => {
+    document.getElementById("btn-fx").addEventListener("click", () => {
       this.renderer.fxEnabled = !this.renderer.fxEnabled;
-      fxBtn.classList.toggle("active", this.renderer.fxEnabled);
+      this.syncToggleButton("btn-fx", this.renderer.fxEnabled, "Enabled", "Disabled");
       this.savePref("fxEnabled", this.renderer.fxEnabled);
     });
 
@@ -181,26 +328,30 @@ class FrogWebApp {
       this.input.refreshHover();
     });
 
-    // Sound toggle
-    const sndBtn = document.getElementById("btn-sound");
-    sndBtn.addEventListener("click", () => {
+    // Sound toggle & volume
+    const toggleSound = () => {
       const next = !this.sound.enabled;
       this.sound.setEnabled(next);
-      sndBtn.classList.toggle("active", next);
-      sndBtn.textContent = next ? "🔊" : "🔇";
+      this.syncSoundUI();
       this.savePref("soundEnabled", next);
+    };
+    document.getElementById("btn-sound").addEventListener("click", toggleSound);
+    document.getElementById("btn-sound-settings").addEventListener("click", toggleSound);
+    document.getElementById("rng-volume").addEventListener("input", (e) => {
+      const v = Number(e.target.value) / 100;
+      this.sound.setVolume(v);
+      this.savePref("soundVolume", v);
     });
 
     // On-screen D-Pad toggle
-    const dpadBtn = document.getElementById("btn-dpad");
-    const dpad = document.getElementById("touch-dpad");
-    dpadBtn.addEventListener("click", () => {
+    document.getElementById("btn-dpad").addEventListener("click", () => {
+      const dpad = document.getElementById("touch-dpad");
       const hidden = dpad.classList.toggle("hidden");
-      dpadBtn.classList.toggle("active", !hidden);
+      this.syncToggleButton("btn-dpad", !hidden, "Visible", "Hidden");
       this.savePref("dpadVisible", !hidden);
     });
 
-    // Sidebar toggle
+    // Desktop Sidebar toggle
     const sbBtn = document.getElementById("btn-sidebar");
     const wsEl = document.getElementById("workspace");
     sbBtn.addEventListener("click", () => {
@@ -209,27 +360,86 @@ class FrogWebApp {
       this.savePref("sidebarsVisible", !hidden);
     });
 
-    // Lobby button (Safe Exit check when in dungeon)
+    // Mobile Drawers
+    document.getElementById("btn-drawer-hero").addEventListener("click", () => this.toggleDrawer("hero"));
+    document.getElementById("btn-drawer-log").addEventListener("click", () => this.toggleDrawer("log"));
+    document.getElementById("drawer-backdrop").addEventListener("click", () => this.closeDrawers());
+    document.querySelectorAll("[data-close-drawer]").forEach((b) => {
+      b.addEventListener("click", () => this.closeDrawers());
+    });
+
+    // Settings Modal triggers
+    const openSettings = () => {
+      document.getElementById("settings-modal").classList.remove("hidden");
+      this.syncModalPauseState();
+    };
+    document.getElementById("btn-settings").addEventListener("click", openSettings);
+    document.getElementById("btn-title-settings").addEventListener("click", openSettings);
+    document.getElementById("btn-pause-settings").addEventListener("click", () => {
+      this.closePauseModal();
+      openSettings();
+    });
+    document.getElementById("btn-settings-close").addEventListener("click", () => {
+      document.getElementById("settings-modal").classList.add("hidden");
+      this.syncModalPauseState();
+    });
+
+    // Controls Reference Modal triggers
+    const openControls = () => {
+      document.getElementById("controls-modal").classList.remove("hidden");
+      this.syncModalPauseState();
+    };
+    document.getElementById("btn-controls-ref").addEventListener("click", openControls);
+    document.getElementById("btn-title-controls").addEventListener("click", openControls);
+    document.getElementById("btn-pause-controls").addEventListener("click", () => {
+      this.closePauseModal();
+      openControls();
+    });
+    document.getElementById("btn-controls-close").addEventListener("click", () => {
+      document.getElementById("controls-modal").classList.add("hidden");
+      this.syncModalPauseState();
+    });
+
+    // Game Menu / Pause button
     document.getElementById("btn-lobby").addEventListener("click", () => {
-      const st = this.renderer.state || {};
-      if (this.running && st.gen && st.dungeon) {
-        this.openExitModal(st);
+      if (this.running) {
+        this.openExitModal(this.renderer.state || {});
       } else {
         this.showLobby(true);
       }
     });
 
-    // Exit confirmation modal buttons
+    // Pause / Exit confirmation modal buttons
+    document.getElementById("btn-pause-resume").addEventListener("click", () => this.closePauseModal());
+    document.getElementById("btn-exit-cancel").addEventListener("click", () => this.closePauseModal());
     document.getElementById("btn-exit-save").addEventListener("click", () => {
-      document.getElementById("exit-modal").classList.add("hidden");
+      this._voluntaryExit = true;
+      this.closePauseModal();
       this.send({ type: "save_quit" });
     });
     document.getElementById("btn-exit-discard").addEventListener("click", () => {
-      document.getElementById("exit-modal").classList.add("hidden");
+      document.getElementById("abandon-confirm").classList.remove("hidden");
+    });
+    document.getElementById("btn-abandon-no").addEventListener("click", () => {
+      document.getElementById("abandon-confirm").classList.add("hidden");
+    });
+    document.getElementById("btn-abandon-yes").addEventListener("click", () => {
+      this._voluntaryExit = true;
+      this.closePauseModal();
       this.showLobby(true);
     });
-    document.getElementById("btn-exit-cancel").addEventListener("click", () => {
-      document.getElementById("exit-modal").classList.add("hidden");
+
+    // Endgame Modal buttons
+    document.getElementById("btn-endgame-title").addEventListener("click", () => {
+      document.getElementById("endgame-modal").classList.add("hidden");
+      this.syncModalPauseState();
+      this.showLobby(false);
+    });
+    document.getElementById("btn-endgame-new").addEventListener("click", () => {
+      document.getElementById("endgame-modal").classList.add("hidden");
+      this.syncModalPauseState();
+      this.showLobby(false);
+      document.getElementById("new-hero-name").focus();
     });
 
     // Re-target button in target card
@@ -237,7 +447,7 @@ class FrogWebApp {
       this.send({ type: "cmd", str: "*" });
     });
 
-    // Lobby start new hero
+    // Title screen start new hero
     const startNew = () => {
       const nameInput = document.getElementById("new-hero-name");
       const name = (nameInput.value || "PLAYER").trim();
@@ -248,7 +458,7 @@ class FrogWebApp {
       if (e.key === "Enter") startNew();
     });
 
-    // Tabs (Radar / Pack / Gear)
+    // Left drawer tabs (Nearby / Pack / Gear)
     document.querySelectorAll(".tab-btn[data-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const target = btn.dataset.tab;
@@ -256,6 +466,18 @@ class FrogWebApp {
         btn.classList.add("active");
         ["radar", "inven", "equip"].forEach((id) => {
           document.getElementById(`tab-${id}`).classList.toggle("hidden", id !== target);
+        });
+      });
+    });
+
+    // Action Dock Category Tabs (Explore / Items / Ledger)
+    document.querySelectorAll(".dock-tab[data-dock-group]").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const grp = tab.dataset.dockGroup;
+        document.querySelectorAll(".dock-tab[data-dock-group]").forEach((t) => t.classList.remove("active"));
+        tab.classList.add("active");
+        document.querySelectorAll("#hotbar .hb-btn[data-group]").forEach((btn) => {
+          btn.classList.toggle("hidden-group", btn.dataset.group !== grp);
         });
       });
     });
@@ -283,24 +505,39 @@ class FrogWebApp {
     });
   }
 
+  closePauseModal() {
+    document.getElementById("exit-modal").classList.add("hidden");
+    document.getElementById("abandon-confirm").classList.add("hidden");
+    this.syncModalPauseState();
+  }
+
   openExitModal(st) {
     const saveBtn = document.getElementById("btn-exit-save");
     const desc = document.getElementById("exit-modal-desc");
-    if (st.canSave) {
+    document.getElementById("abandon-confirm").classList.add("hidden");
+    if (!st.gen || !st.dungeon) {
+      saveBtn.disabled = true;
+      desc.textContent = "Character creation is in progress. Abandoning returns to the title screen.";
+    } else if (st.canSave) {
       saveBtn.disabled = false;
-      desc.textContent = "Save your current progress cleanly before returning to the lobby.";
+      desc.textContent = "Save your expedition safely before returning to the title screen.";
     } else {
       saveBtn.disabled = true;
-      desc.textContent = "You are inside a menu or prompt. Close it (Esc) to save, or Force Exit without saving.";
+      desc.textContent = "Finish or cancel (Esc) the current menu or prompt before saving.";
     }
     document.getElementById("exit-modal").classList.remove("hidden");
+    this.syncModalPauseState();
+  }
+
+  setControlMode(mode) {
+    this.input.setControlMode(mode);
+    this.savePref("controlMode", this.input.controlMode);
+    this.syncControlModeUI();
   }
 
   toggleControlMode() {
     const next = this.input.controlMode === "wasd" ? "classic" : "wasd";
-    this.input.setControlMode(next);
-    this.savePref("controlMode", next);
-    this.syncControlModeUI();
+    this.setControlMode(next);
     this.showToast(next === "wasd" ? "Controls: WASD Smart Mode" : "Controls: Classic Roguelike Mode");
   }
 
@@ -308,28 +545,30 @@ class FrogWebApp {
     const isWasd = this.input.controlMode === "wasd";
     document.getElementById("lbl-ctrl-mode").textContent = isWasd ? "WASD" : "Classic";
     document.getElementById("ctrl-mode-chip").textContent = isWasd ? "WASD" : "Classic";
+    document.getElementById("set-ctrl-wasd")?.classList.toggle("active", isWasd);
+    document.getElementById("set-ctrl-classic")?.classList.toggle("active", !isWasd);
 
     const ctrlList = document.getElementById("ctrl-list");
     ctrlList.innerHTML = isWasd
       ? `
-        <li><strong>Left Click Map</strong> Walk / Attack / Auto-Travel</li>
-        <li><strong>Right Click</strong> Look at Tile / Cancel Menu</li>
-        <li><strong>Ctrl / Mid Click</strong> Lock Target Immediately</li>
-        <li><strong>Shift + Click Self</strong> Rest Until Healed</li>
         <li><strong>WASD + QEZC</strong> 8-Way Move (Shift = Run)</li>
         <li><strong>X / Numpad</strong> Wait 1 Turn / Numpad Move</li>
-        <li><strong>Scroll Wheel</strong> Smooth Zoom / Scroll Docs</li>
         <li><strong>F2</strong> Switch WASD ↔ Classic Keys</li>
+        <li><strong>, / R / s</strong> Wait, Rest, Search</li>
+        <li><strong>o / c / D</strong> Open, Close, Disarm</li>
+        <li><strong>g / d / w</strong> Get, Drop, Wear/Wield</li>
+        <li><strong>q / r / E</strong> Quaff, Read, Eat</li>
+        <li><strong>m / f / U</strong> Cast, Fire, Power</li>
       `
       : `
-        <li><strong>Left Click Map</strong> Walk / Attack / Auto-Travel</li>
-        <li><strong>Right Click</strong> Look at Tile / Cancel Menu</li>
-        <li><strong>Ctrl / Mid Click</strong> Lock Target Immediately</li>
-        <li><strong>Shift + Click Self</strong> Rest Until Healed</li>
         <li><strong>Numpad / Arrows</strong> 8-Way Move (Shift = Run)</li>
-        <li><strong>Classic Keys</strong> . Wait, w Wear, q Quaff, r Read</li>
-        <li><strong>Scroll Wheel</strong> Smooth Zoom / Scroll Docs</li>
+        <li><strong>h j k l y u b n</strong> Classic Vi 8-Way Move</li>
         <li><strong>F2</strong> Switch Classic ↔ WASD Smart</li>
+        <li><strong>. / R / s</strong> Wait, Rest, Search</li>
+        <li><strong>o / c / D</strong> Open, Close, Disarm</li>
+        <li><strong>g / d / w</strong> Get, Drop, Wear/Wield</li>
+        <li><strong>q / r / E</strong> Quaff, Read, Eat</li>
+        <li><strong>m / f / U</strong> Cast, Fire, Power</li>
       `;
   }
 
@@ -353,13 +592,23 @@ class FrogWebApp {
     ws.onopen = () => {
       this.connected = true;
       document.getElementById("conn-badge").textContent = "Ready";
+      const tStatus = document.getElementById("title-conn-status");
+      if (tStatus) {
+        tStatus.textContent = "Engine ready";
+        tStatus.classList.remove("offline");
+      }
     };
 
     ws.onclose = () => {
       this.connected = false;
       this.running = false;
       this.input.setEnabled(false);
-      document.getElementById("conn-badge").textContent = "Disconnected — retrying...";
+      document.getElementById("conn-badge").textContent = "Reconnecting...";
+      const tStatus = document.getElementById("title-conn-status");
+      if (tStatus) {
+        tStatus.textContent = "Connection lost — retrying...";
+        tStatus.classList.add("offline");
+      }
       setTimeout(() => this.connectWebSocket(), 1500);
     };
 
@@ -398,7 +647,7 @@ class FrogWebApp {
       return;
     }
     if (!data.saves || data.saves.length === 0) {
-      box.innerHTML = `<div class="empty-hint">No saved games found yet. Start a new hero!</div>`;
+      box.innerHTML = `<div class="empty-hint">No saved expeditions found. Start a new hero above.</div>`;
       return;
     }
     box.innerHTML = "";
@@ -406,20 +655,40 @@ class FrogWebApp {
       const row = document.createElement("div");
       row.className = "save-row";
 
+      const main = document.createElement("div");
+      main.className = "save-row-main";
+
       const btn = document.createElement("button");
       btn.className = "save-btn";
-      const dt = new Date(s.mtime).toLocaleString();
+      const dt = new Date(s.mtime).toLocaleDateString(undefined, { month: "short", day: "numeric" });
       const kb = Math.max(1, Math.round(s.size / 1024));
-      btn.innerHTML = `<strong>${this.escapeHtml(s.name)}</strong><small>${kb} KB · ${this.escapeHtml(dt)}</small>`;
+      btn.innerHTML = `<strong>${this.escapeHtml(s.name)}</strong><small class="num">${kb} KB · ${this.escapeHtml(dt)}</small>`;
       btn.addEventListener("click", () => this.startSession("load", s.name));
 
       const del = document.createElement("button");
       del.className = "save-del-btn";
       del.title = `Delete save "${s.name}"`;
-      del.textContent = "🗑";
-      del.addEventListener("click", async (e) => {
+      del.setAttribute("aria-label", `Delete save ${s.name}`);
+      del.innerHTML = iconHtml("trash");
+
+      const confirmBar = document.createElement("div");
+      confirmBar.className = "confirm-bar hidden";
+      confirmBar.innerHTML = `
+        <span>Delete <strong>${this.escapeHtml(s.name)}</strong>?</span>
+        <div style="display:flex;gap:5px">
+          <button type="button" class="danger-btn" data-yes>Delete</button>
+          <button type="button" class="ghost-btn" data-no>Cancel</button>
+        </div>
+      `;
+
+      del.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (!confirm(`Delete saved character "${s.name}"? This cannot be undone.`)) return;
+        confirmBar.classList.toggle("hidden");
+      });
+      confirmBar.querySelector("[data-no]").addEventListener("click", () => {
+        confirmBar.classList.add("hidden");
+      });
+      confirmBar.querySelector("[data-yes]").addEventListener("click", async () => {
         try {
           const res = await fetch("/api/saves/delete", {
             method: "POST",
@@ -435,20 +704,23 @@ class FrogWebApp {
         }
       });
 
-      row.appendChild(btn);
-      row.appendChild(del);
+      main.appendChild(btn);
+      main.appendChild(del);
+      row.appendChild(main);
+      row.appendChild(confirmBar);
       box.appendChild(row);
     }
   }
 
   resetHUD() {
     document.getElementById("top-pills").classList.add("hidden");
+    document.getElementById("mobile-vitals").classList.add("hidden");
     document.getElementById("pill-depth").textContent = "Town";
     document.getElementById("pill-turn").textContent = "0";
     document.getElementById("pill-gold").textContent = "0 gp";
     const foodEl = document.getElementById("pill-food");
     foodEl.textContent = "Fed";
-    foodEl.className = "pill-val";
+    foodEl.className = "telem-val";
     document.getElementById("hero-name").textContent = "Adventurer";
     document.getElementById("hero-sub").textContent = "Create or load a character";
     document.getElementById("hero-lv").textContent = "Lv 1";
@@ -470,11 +742,16 @@ class FrogWebApp {
     this.sound.ensureCtx();
     const activeGraf = document.querySelector(".seg-btn.active[data-graf]")?.dataset.graf || "overhaul";
     this.resetHUD();
+    this.stopTitleArt();
+    this._voluntaryExit = false;
+    this._lastRunSnapshot = null;
     document.getElementById("lobby-modal").classList.add("hidden");
-    document.getElementById("exit-modal").classList.add("hidden");
-    document.getElementById("conn-badge").textContent = `Playing · ${name}`;
+    this.closePauseModal();
+    this.closeDrawers();
+    document.getElementById("conn-badge").textContent = name;
     this.running = true;
     this.input.setEnabled(true);
+    this.syncModalPauseState();
     this.send({
       type: "start",
       mode,
@@ -486,17 +763,77 @@ class FrogWebApp {
   }
 
   showLobby(sendStop = true) {
-    if (sendStop) this.send({ type: "stop" });
+    if (sendStop) {
+      this._voluntaryExit = true;
+      this.send({ type: "stop" });
+    }
     this.running = false;
     this.input.setEnabled(false);
+    this.closeDrawers();
+    this.closePauseModal();
     this.hideTooltip();
     this.resetHUD();
-    document.getElementById("exit-modal").classList.add("hidden");
     document.getElementById("prompt-actions").classList.add("hidden");
     document.getElementById("workspace").classList.add("birth-wide");
     document.getElementById("conn-badge").textContent = this.connected ? "Ready" : "Disconnected";
     document.getElementById("lobby-modal").classList.remove("hidden");
+    this.startTitleArt();
     this.refreshSaves();
+  }
+
+  maybeShowEndgame() {
+    const snap = this._lastRunSnapshot;
+    if (!snap || !snap.gen || !snap.player || this._voluntaryExit) {
+      this.showLobby(false);
+      return;
+    }
+
+    const p = snap.player;
+    const msgJoined = (snap.msgs || []).map((m) => m.s || "").join(" ").toLowerCase();
+    const isWinner =
+      msgJoined.includes("total winner") ||
+      msgJoined.includes("you have slain the serpent") ||
+      msgJoined.includes("ripe old age");
+    const isDead = p.chp < 0 || msgJoined.includes("you die") || msgJoined.includes("killed by");
+
+    if (!isWinner && !isDead) {
+      this.showLobby(false);
+      this.showToast("Expedition saved.");
+      return;
+    }
+
+    this.running = false;
+    this.input.setEnabled(false);
+    this.hideTooltip();
+    this.closeDrawers();
+
+    const crest = document.getElementById("endgame-crest");
+    const kicker = document.getElementById("endgame-kicker");
+    const title = document.getElementById("endgame-title");
+    const sub = document.getElementById("endgame-sub");
+
+    crest.className = `endgame-crest ${isWinner ? "" : "death"}`.trim();
+    crest.innerHTML = iconHtml(isWinner ? "crown" : "skull");
+    kicker.textContent = isWinner ? "Victory Achieved" : "Epitaph";
+    title.textContent = isWinner ? "Champion of Chaos" : "Fallen in the Depths";
+    sub.textContent = `${p.name} — Lv ${p.lev} ${p.pers} ${p.race} ${p.class}`;
+
+    const loc = p.wild ? "Wilderness" : p.depth > 0 ? `${p.depth * 50} ft` : "Town";
+    document.getElementById("endgame-stats").innerHTML = `
+      <div class="eg-stat"><span>Level</span><strong>${p.lev}</strong></div>
+      <div class="eg-stat"><span>Location</span><strong>${this.escapeHtml(loc)}</strong></div>
+      <div class="eg-stat"><span>Turns</span><strong>${p.turn.toLocaleString()}</strong></div>
+      <div class="eg-stat"><span>Gold</span><strong>${p.au.toLocaleString()}</strong></div>
+    `;
+
+    const chron = document.getElementById("endgame-chronicle");
+    const tail = (snap.msgs || []).slice(-6);
+    chron.innerHTML = tail.length
+      ? tail.map((m) => `<div>${this.escapeHtml(m.s)}</div>`).join("")
+      : "<div>No final chronicle recorded.</div>";
+
+    document.getElementById("endgame-modal").classList.remove("hidden");
+    this.syncModalPauseState();
   }
 
   handleEngineMsg(msg) {
@@ -509,33 +846,42 @@ class FrogWebApp {
         if (Array.isArray(msg.sounds)) {
           for (const s of msg.sounds) this.sound.play(s);
         }
-        if (msg.state) this.syncHUD(msg.state);
+        if (msg.state) {
+          if (msg.state.gen && msg.state.player) {
+            this._lastRunSnapshot = {
+              gen: msg.state.gen,
+              player: msg.state.player,
+              msgs: msg.state.msgs || [],
+            };
+          }
+          this.syncHUD(msg.state);
+        }
         this.input.refreshHover();
         break;
       case "hover":
         this.updateTooltip(msg);
         break;
       case "save_blocked":
+        this._voluntaryExit = false;
         this.showToast(msg.msg || "Finish current prompt before saving.");
         break;
       case "error":
-        alert(msg.msg || "Engine error");
+        this.showToast(msg.msg || "Engine error");
         this.showLobby(false);
         break;
       case "quit":
       case "exit":
-        if (this.running) this.showLobby(false);
+        if (this.running) this.maybeShowEndgame();
         break;
     }
   }
 
   syncHUD(st) {
-    // Wide layout during character creation (!st.gen)
     const ws = document.getElementById("workspace");
     ws.classList.toggle("birth-wide", !st.gen);
     document.getElementById("top-pills").classList.toggle("hidden", !st.gen);
+    document.getElementById("mobile-vitals").classList.toggle("hidden", !st.gen);
 
-    // Graphics active pill sync
     if (st.graf) {
       const target = st.graf === "ascii" ? "none" : st.graf;
       document.querySelectorAll(".seg-btn[data-graf]").forEach((b) => {
@@ -543,7 +889,6 @@ class FrogWebApp {
       });
     }
 
-    // Context badge
     const ctxBadge = document.getElementById("ctx-badge");
     if (!st.dungeon || st.icky) {
       ctxBadge.textContent = CTX_LABELS[st.ctx] || "Menu";
@@ -553,7 +898,6 @@ class FrogWebApp {
       ctxBadge.textContent = "Exploring";
     }
 
-    // Hotbar availability (disable gameplay command buttons when inside menus/prompts)
     const canRunCmd = !!(st.gen && st.dungeon && !st.icky && st.cmdReady);
     document.querySelectorAll("#hotbar .hb-btn").forEach((btn) => {
       if (btn.dataset.key === "19") {
@@ -563,7 +907,6 @@ class FrogWebApp {
       }
     });
 
-    // Context-smart floating prompt actions
     this.syncPromptBar(st);
 
     const p = st.player;
@@ -572,6 +915,7 @@ class FrogWebApp {
       const realms = [p.r1, p.r2].filter(Boolean).join(" / ");
       document.getElementById("hero-sub").textContent = `${p.pers} ${p.race} ${p.class}${realms ? " · " + realms : ""}`;
       document.getElementById("hero-lv").textContent = `Lv ${p.lev}`;
+      document.getElementById("mv-lv").textContent = `Lv ${p.lev}`;
 
       const hpPct = p.mhp > 0 ? Math.max(0, Math.min(100, (100 * p.chp) / p.mhp)) : 100;
       const hpBar = document.getElementById("hp-bar");
@@ -579,9 +923,20 @@ class FrogWebApp {
       hpBar.classList.toggle("low", hpPct < 35);
       document.getElementById("hp-text").textContent = `${p.chp} / ${p.mhp}`;
 
+      const mvHpBar = document.getElementById("mv-hp-bar");
+      mvHpBar.style.width = `${hpPct}%`;
+      mvHpBar.classList.toggle("low", hpPct < 35);
+      document.getElementById("mv-hp-text").textContent = `${p.chp}/${p.mhp}`;
+
       const spPct = p.msp > 0 ? Math.max(0, Math.min(100, (100 * p.csp) / p.msp)) : 0;
-      document.getElementById("sp-bar").style.width = `${p.msp > 0 ? spPct : 100}%`;
+      const spBar = document.getElementById("sp-bar");
+      spBar.style.width = `${p.msp > 0 ? spPct : 0}%`;
+      spBar.closest(".bar-row")?.classList.toggle("sp-empty", p.msp <= 0);
       document.getElementById("sp-text").textContent = p.msp > 0 ? `${p.csp} / ${p.msp}` : "—";
+      const mvSpBar = document.getElementById("mv-sp-bar");
+      mvSpBar.style.width = `${p.msp > 0 ? spPct : 0}%`;
+      mvSpBar.closest(".mv-bar-group")?.classList.toggle("sp-empty", p.msp <= 0);
+      document.getElementById("mv-sp-text").textContent = p.msp > 0 ? `${p.csp}/${p.msp}` : "—";
 
       const span = Math.max(1, (p.nextReq || 1) - (p.curReq || 0));
       const xpPct = p.lev >= 50 ? 100 : Math.max(0, Math.min(100, ((p.exp - (p.curReq || 0)) * 100) / span));
@@ -592,13 +947,16 @@ class FrogWebApp {
       document.getElementById("stat-spd").textContent = p.spd >= 0 ? `+${p.spd}` : `${p.spd}`;
       document.getElementById("stat-lite").textContent = `${p.lite}`;
 
-      document.getElementById("pill-depth").textContent = p.wild
+      const depthLabel = p.wild
         ? "Wilderness"
         : p.depth > 0
         ? `${p.depth * 50} ft (Lv ${p.depth})`
         : "Town";
+      document.getElementById("pill-depth").textContent = depthLabel;
+      document.getElementById("mv-depth").textContent = depthLabel;
       document.getElementById("pill-turn").textContent = p.turn.toLocaleString();
       document.getElementById("pill-gold").textContent = `${p.au.toLocaleString()} gp`;
+      document.getElementById("mv-gold").textContent = `${p.au.toLocaleString()} gp`;
 
       this.syncFoodPill(p.food);
 
@@ -612,7 +970,7 @@ class FrogWebApp {
       flagsBox.innerHTML = "";
       for (const fl of p.flags || []) {
         const el = document.createElement("span");
-        el.className = `flag-pill ${fl.kind}`;
+        el.className = `flag-tag ${fl.kind}`;
         el.textContent = fl.label;
         flagsBox.appendChild(el);
       }
@@ -644,6 +1002,7 @@ class FrogWebApp {
 
   syncFoodPill(food) {
     const el = document.getElementById("pill-food");
+    const mv = document.getElementById("mv-food");
     let label = "Fed";
     let cls = "";
     if (food < 500) { label = "Faint!"; cls = "bad"; }
@@ -652,7 +1011,8 @@ class FrogWebApp {
     else if (food >= 15000) { label = "Gorged"; cls = "warn"; }
     else if (food >= 10000) { label = "Full"; cls = "good"; }
     el.textContent = label;
-    el.className = `pill-val ${cls}`.trim();
+    el.className = `telem-val ${cls}`.trim();
+    if (mv) mv.textContent = label;
   }
 
   syncPromptBar(st) {
@@ -669,7 +1029,7 @@ class FrogWebApp {
     this._lastPromptSig = sig;
 
     bar.innerHTML = "";
-    const addPill = (label, action, cls = "") => {
+    const addBtn = (label, action, cls = "") => {
       const b = document.createElement("button");
       b.className = `prompt-pill ${cls}`.trim();
       b.textContent = label;
@@ -683,15 +1043,15 @@ class FrogWebApp {
     if (kind === "birth" || !st.gen) {
       const lbl = document.createElement("span");
       lbl.className = "prompt-label";
-      lbl.textContent = "Character Creation · Click option or use keys";
+      lbl.textContent = "Character Birth — Click an option or use keys";
       bar.appendChild(lbl);
-      addPill("Enter · Confirm", () => this.send({ type: "key", code: 13 }));
-      addPill("Esc · Back", () => this.send({ type: "key", code: 27 }), "ghost");
-      addPill("= · Options", () => this.send({ type: "key", code: "=".charCodeAt(0) }), "ghost");
-      addPill("? · Help", () => this.send({ type: "key", code: "?".charCodeAt(0) }), "ghost");
+      addBtn("Enter · Confirm", () => this.send({ type: "key", code: 13 }));
+      addBtn("Esc · Back", () => this.send({ type: "key", code: 27 }), "ghost");
+      addBtn("= · Options", () => this.send({ type: "key", code: "=".charCodeAt(0) }), "ghost");
+      addBtn("? · Help", () => this.send({ type: "key", code: "?".charCodeAt(0) }), "ghost");
     } else if (kind === "more") {
-      addPill("Space · Continue", () => this.send({ type: "key", code: 32 }), "warn");
-      addPill("Esc · Dismiss", () => this.send({ type: "key", code: 27 }), "ghost");
+      addBtn("Space · Continue", () => this.send({ type: "key", code: 32 }), "warn");
+      addBtn("Esc · Dismiss", () => this.send({ type: "key", code: 27 }), "ghost");
     } else if (kind === "yn") {
       if (st.promptText) {
         const lbl = document.createElement("span");
@@ -699,13 +1059,13 @@ class FrogWebApp {
         lbl.textContent = st.promptText;
         bar.appendChild(lbl);
       }
-      addPill("Y · Yes", () => this.send({ type: "key", code: "y".charCodeAt(0) }));
-      addPill("N · No", () => this.send({ type: "key", code: "n".charCodeAt(0) }), "danger");
-      addPill("Esc · Cancel", () => this.send({ type: "key", code: 27 }), "ghost");
+      addBtn("Y · Yes", () => this.send({ type: "key", code: "y".charCodeAt(0) }));
+      addBtn("N · No", () => this.send({ type: "key", code: "n".charCodeAt(0) }), "danger");
+      addBtn("Esc · Cancel", () => this.send({ type: "key", code: 27 }), "ghost");
     } else if (kind === "dir") {
       const lbl = document.createElement("span");
       lbl.className = "prompt-label";
-      lbl.textContent = "Pick direction (click map, WASD/numpad, or):";
+      lbl.textContent = "Choose direction:";
       bar.appendChild(lbl);
       const pad = document.createElement("span");
       pad.className = "dir-mini-pad";
@@ -716,20 +1076,20 @@ class FrogWebApp {
         pad.appendChild(db);
       }
       bar.appendChild(pad);
-      addPill("Esc · Cancel", () => this.send({ type: "key", code: 27 }), "ghost");
+      addBtn("Esc · Cancel", () => this.send({ type: "key", code: 27 }), "ghost");
     } else if (kind === "target") {
       const lbl = document.createElement("span");
       lbl.className = "prompt-label";
-      lbl.textContent = "Click tile to target/inspect";
+      lbl.textContent = "Click tile to target or inspect";
       bar.appendChild(lbl);
-      addPill("Space · Next", () => this.send({ type: "key", code: 32 }));
-      addPill("t · Lock Target", () => this.send({ type: "key", code: "t".charCodeAt(0) }), "warn");
-      addPill("Esc · Cancel", () => this.send({ type: "key", code: 27 }), "ghost");
+      addBtn("Space · Next", () => this.send({ type: "key", code: 32 }));
+      addBtn("t · Lock Target", () => this.send({ type: "key", code: "t".charCodeAt(0) }), "warn");
+      addBtn("Esc · Cancel", () => this.send({ type: "key", code: 27 }), "ghost");
     } else if (kind === "menu") {
-      addPill("PgUp", () => this.send({ type: "skey", name: "[page_up]", shift: 0, ctrl: 0 }), "ghost");
-      addPill("PgDn", () => this.send({ type: "skey", name: "[page_down]", shift: 0, ctrl: 0 }), "ghost");
-      addPill("? · Help", () => this.send({ type: "key", code: "?".charCodeAt(0) }), "ghost");
-      addPill("Esc · Close", () => this.send({ type: "key", code: 27 }), "warn");
+      addBtn("PgUp", () => this.send({ type: "skey", name: "[page_up]", shift: 0, ctrl: 0 }), "ghost");
+      addBtn("PgDn", () => this.send({ type: "skey", name: "[page_down]", shift: 0, ctrl: 0 }), "ghost");
+      addBtn("? · Help", () => this.send({ type: "key", code: "?".charCodeAt(0) }), "ghost");
+      addBtn("Esc · Close", () => this.send({ type: "key", code: 27 }), "warn");
     } else {
       if (st.promptText) {
         const lbl = document.createElement("span");
@@ -737,8 +1097,8 @@ class FrogWebApp {
         lbl.textContent = st.promptText;
         bar.appendChild(lbl);
       }
-      addPill("Enter · Confirm", () => this.send({ type: "key", code: 13 }));
-      addPill("Esc · Cancel", () => this.send({ type: "key", code: 27 }), "ghost");
+      addBtn("Enter · Confirm", () => this.send({ type: "key", code: 13 }));
+      addBtn("Esc · Cancel", () => this.send({ type: "key", code: 27 }), "ghost");
     }
 
     bar.classList.remove("hidden");
@@ -760,16 +1120,21 @@ class FrogWebApp {
       const [ux, uy, hpPct, att, sleep, uniq, name] = m;
       const item = document.createElement("div");
       item.className = "list-item";
-      const badge = att === 2 ? "🟢 Pet" : att === 1 ? "🔵 Ally" : uniq ? "👑 Unique" : sleep ? "💤 Sleep" : "⚔ Hostile";
+      const [attCls, attText] =
+        att === 2 ? ["pet", "Pet"]
+        : att === 1 ? ["ally", "Ally"]
+        : uniq ? ["unique", "Unique"]
+        : sleep ? ["sleep", "Asleep"]
+        : ["hostile", "Hostile"];
       item.innerHTML = `
         <div class="list-item-row">
           <span class="item-name">${this.escapeHtml(name)}</span>
-          <small style="color:var(--muted)">${badge}</small>
+          <span class="att-tag ${attCls}">${attText}</span>
         </div>
         <div class="bar-track thin"><div class="bar-fill hp" style="width:${hpPct}%"></div></div>
         <div class="item-actions">
-          <button class="mini-btn" data-act="look" ${canRunCmd ? "" : "disabled"}>👁 Look</button>
-          <button class="mini-btn" data-act="target" ${canRunCmd ? "" : "disabled"}>🎯 Target</button>
+          <button class="mini-btn" data-act="look" ${canRunCmd ? "" : "disabled"}>${iconHtml("eye")} Look</button>
+          <button class="mini-btn" data-act="target" ${canRunCmd ? "" : "disabled"}>${iconHtml("target")} Target</button>
         </div>
       `;
       item.querySelector('[data-act="look"]').addEventListener("click", (e) => {
@@ -802,7 +1167,7 @@ class FrogWebApp {
       div.innerHTML = `
         <div class="list-item-row">
           <span class="item-name"><span class="slot-tag">${it.lbl})</span>${this.escapeHtml(it.name)}</span>
-          <small style="color:var(--muted)">${(it.wgt / 10).toFixed(1)}lb</small>
+          <small class="num" style="color:var(--text-muted)">${(it.wgt / 10).toFixed(1)}lb</small>
         </div>
         <div class="item-actions">
           <button class="mini-btn" data-act="inspect" ${canRunCmd ? "" : "disabled"}>Inspect</button>
@@ -841,12 +1206,12 @@ class FrogWebApp {
     for (const eq of items) {
       const div = document.createElement("div");
       div.className = "list-item";
-      div.style.opacity = eq.empty ? "0.55" : "1";
+      div.style.opacity = eq.empty ? "0.52" : "1";
       div.innerHTML = `
         <div class="list-item-row">
           <span class="item-name"><span class="slot-tag">${eq.lbl})</span>${this.escapeHtml(eq.name)}</span>
         </div>
-        <small style="color:var(--muted);font-size:10px">${this.escapeHtml(eq.slotName)}</small>
+        <small style="color:var(--text-muted);font-size:10px">${this.escapeHtml(eq.slotName)}</small>
         ${
           eq.empty
             ? ""
@@ -956,7 +1321,7 @@ class FrogWebApp {
     if (typeof msg.hp === "number" && msg.hp >= 0) {
       barWrap.classList.remove("hidden");
       barFill.style.width = `${Math.max(0, Math.min(100, msg.hp))}%`;
-      barFill.style.background = msg.att === 2 ? "#4ade80" : msg.att === 1 ? "#38bdf8" : "#ef4444";
+      barFill.style.background = msg.att === 2 ? "#68b068" : msg.att === 1 ? "#5fb3a2" : "#c93640";
     } else {
       barWrap.classList.add("hidden");
     }

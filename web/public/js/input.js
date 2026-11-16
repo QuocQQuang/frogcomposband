@@ -46,6 +46,7 @@ export class InputController {
 
     this.controlMode = "wasd"; // "wasd" | "classic"
     this.enabled = false;
+    this.paused = false;
     this._lastHoverKey = "";
     this._lastHoverSent = 0;
     this._hoverTimer = null;
@@ -62,6 +63,14 @@ export class InputController {
     if (!this.enabled) {
       clearTimeout(this._hoverTimer);
       this._lastHoverKey = "";
+    }
+  }
+
+  setPaused(val) {
+    this.paused = !!val;
+    if (this.paused) {
+      clearTimeout(this._hoverTimer);
+      this.onHideTooltip();
     }
   }
 
@@ -134,7 +143,7 @@ export class InputController {
     this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
     this.canvas.addEventListener("mousemove", (e) => {
-      if (!this.enabled) return;
+      if (!this.enabled || this.paused) return;
       this._pointerInside = true;
       this._lastPointer = { clientX: e.clientX, clientY: e.clientY };
 
@@ -167,7 +176,7 @@ export class InputController {
     });
 
     this.canvas.addEventListener("mousedown", (e) => {
-      if (!this.enabled) return;
+      if (!this.enabled || this.paused) return;
       if (document.activeElement && document.activeElement.blur) {
         document.activeElement.blur();
       }
@@ -261,7 +270,7 @@ export class InputController {
   }
 
   handleKeyDown(e) {
-    if (!this.enabled || this.isInputFocused()) return;
+    if (!this.enabled || this.paused || this.isInputFocused()) return;
 
     if (e.code === "F2") {
       e.preventDefault();

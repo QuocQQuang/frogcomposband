@@ -3590,7 +3590,13 @@ static void _dispatch_command(int old_now_turn)
             }
             else if (mouse_movement)
             {
-                travel_begin(TRAVEL_MODE_NORMAL, mouse_map_x, mouse_map_y);
+                if (!(cave[mouse_map_y][mouse_map_x].info & (CAVE_AWARE | CAVE_MARK | CAVE_VIEW)) && dir)
+                {
+                    command_dir = dir;
+                    do_cmd_walk(always_pickup);
+                }
+                else
+                    travel_begin(TRAVEL_MODE_NORMAL, mouse_map_x, mouse_map_y);
             }
             break;
         }

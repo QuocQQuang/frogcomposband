@@ -254,7 +254,7 @@ export class GameRenderer {
     ctx.save();
     ctx.scale(dpr, dpr);
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = "#0e1118";
+    ctx.fillStyle = "#0b0910";
     ctx.fillRect(0, 0, W, H);
 
     if (this.isMapMode()) {
@@ -527,7 +527,7 @@ export class GameRenderer {
       const hx = camX + (this.hoverCell.x - mr.x) * tileDraw;
       const hy = camY + (this.hoverCell.y - mr.y) * tileDraw;
       const arm = Math.max(6, Math.floor(tileDraw * 0.28));
-      ctx.strokeStyle = "rgba(110, 231, 183, 0.9)";
+      ctx.strokeStyle = "rgba(229, 181, 79, 0.9)";
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(hx + 1, hy + arm); ctx.lineTo(hx + 1, hy + 1); ctx.lineTo(hx + arm, hy + 1);
@@ -557,9 +557,9 @@ export class GameRenderer {
     if (extraMsgRows.length > 0) {
       const lineH = 20;
       const boxH = extraMsgRows.length * lineH + 8;
-      ctx.fillStyle = "rgba(12, 16, 26, 0.92)";
+      ctx.fillStyle = "rgba(14, 11, 20, 0.95)";
       ctx.fillRect(0, topBarH, W, boxH);
-      ctx.strokeStyle = "rgba(79, 209, 197, 0.28)";
+      ctx.strokeStyle = "rgba(140, 103, 43, 0.45)";
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(0, topBarH + boxH);
@@ -587,9 +587,9 @@ export class GameRenderer {
   }
 
   renderBannerRow(ctx, rowIdx, x, y, w, h) {
-    ctx.fillStyle = "rgba(12, 16, 26, 0.95)";
+    ctx.fillStyle = "rgba(14, 11, 20, 0.96)";
     ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.16)";
+    ctx.strokeStyle = "rgba(140, 103, 43, 0.28)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x, rowIdx === 0 ? y + h : y);
@@ -628,17 +628,17 @@ export class GameRenderer {
       canvasH: H,
     };
 
-    ctx.fillStyle = "#111521";
+    ctx.fillStyle = "#100d17";
     ctx.fillRect(offsetX - 10, offsetY - 8, gridW + 20, gridH + 16);
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.22)";
+    ctx.strokeStyle = "rgba(140, 103, 43, 0.36)";
     ctx.lineWidth = 1;
     ctx.strokeRect(offsetX - 10, offsetY - 8, gridW + 20, gridH + 16);
 
     if (this.hoverCell && !this.hoverCell.inMap) {
       const hy = offsetY + this.hoverCell.y * cellH;
-      ctx.fillStyle = "rgba(79, 209, 197, 0.11)";
+      ctx.fillStyle = "rgba(229, 181, 79, 0.11)";
       ctx.fillRect(offsetX, hy, gridW, cellH);
-      ctx.fillStyle = "rgba(79, 209, 197, 0.65)";
+      ctx.fillStyle = "rgba(229, 181, 79, 0.72)";
       ctx.fillRect(offsetX - 4, hy + 2, 3, cellH - 4);
     }
 
@@ -687,7 +687,7 @@ export class GameRenderer {
     }
 
     if (this.cursor.v && Math.floor(nowMs / 480) % 2 === 0) {
-      ctx.strokeStyle = "#4fd1c5";
+      ctx.strokeStyle = "#e5b54f";
       ctx.lineWidth = 2;
       ctx.strokeRect(offsetX + this.cursor.x * cellW + 1, offsetY + this.cursor.y * cellH + 1, cellW - 2, cellH - 2);
     }
