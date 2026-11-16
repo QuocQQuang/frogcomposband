@@ -4478,17 +4478,7 @@ bool move_player_effect(int ny, int nx, u32b mpe_mode)
     if (cave[ny][nx].info & CAVE_IN_DETECT)
         new_dtrap = TRUE;
 
-    /* Stop running if leaving a trap detected zone */
-    if (!(mpe_mode & MPE_STAYING) && (running || travel.run) && disturb_trap_detect)
-    {
-        if (old_dtrap && !new_dtrap && !_auto_detect_traps())
-        {
-            disturb(0, 0);
-            energy_use = 0;
-            cmsg_print(TERM_VIOLET, "You are about to leave a trap detected zone.");
-            return FALSE;
-        }
-    }
+    /* Don't interrupt movement/running when leaving a trap detected zone. */
 
     /* Automatically detecting traps is just so lovable. Let's try the same
      * with Magic Mapping! */
@@ -4556,11 +4546,7 @@ bool move_player_effect(int ny, int nx, u32b mpe_mode)
         /* Check detection status */
         if (old_dtrap && !new_dtrap)
         {
-            if (alert_trap_detect)
-            {
-                cmsg_print(TERM_VIOLET, "You leave a trap detected zone.");
-                msg_print(NULL); /* Force a -more- prompt (unless auto_more is enabled!) */
-            }
+            /* Suppress the leave-zone alert to avoid movement interruption. */
             p_ptr->redraw |= (PR_STATUS);
         }
         else if (!old_dtrap && new_dtrap)
@@ -6397,23 +6383,7 @@ static bool travel_abort(void)
         /* Access grid */
         c_ptr = &cave[row][col];
 
-        if (disturb_trap_detect)
-        {
-            bool old_dtrap = FALSE;
-            bool new_dtrap = FALSE;
-
-            if (cave[py][px].info & CAVE_IN_DETECT)
-                old_dtrap = TRUE;
-
-            if (c_ptr->info & CAVE_IN_DETECT)
-                new_dtrap = TRUE;
-
-            if (old_dtrap && !new_dtrap && !_auto_detect_traps())
-            {
-                cmsg_print(TERM_VIOLET, "You are about to leave a trap detected zone.");
-                return TRUE;
-            }
-        }
+        /* Don't stop travel at trap-detection boundaries. */
 
         /* Visible monsters abort running after the first step */
 		if (c_ptr->m_idx && travel.run != 255)
@@ -6518,5 +6488,18 @@ void travel_step(void)
     else
         travel.run--;
 }
+
+void do_cmd_toggle_1h(void)
+{
+    p_ptr->force_1h = !p_ptr->force_1h;
+    if (p_ptr->force_1h)
+        msg_print("Force one-handed mode: ON");
+    else
+        msg_print("Force one-handed mode: OFF");
+
+    p_ptr->update |= (PU_BONUS | PU_HP | PU_MANA | PU_SPELLS);
+    p_ptr->redraw |= (PR_STATUS);
+}
+
 
 

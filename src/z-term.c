@@ -13,10 +13,32 @@
 
 #include "z-term.h"
 #include "z-virt.h"
+#include <stdarg.h>
 
 /* Special flags in the attr data */
 #define AF_BIGTILE2 0xf0
 #define AF_TILE1   0x80
+
+static void _mouse_dbg(cptr fmt, ...)
+{
+#ifdef MOUSE_DEBUG
+    FILE *fp;
+    va_list vp;
+    char msg[256];
+    fp = fopen("C:\\Users\\Lecoo\\Desktop\\Git\\frogcomposband\\debug-527ed0.log", "a");
+    if (!fp) return;
+    va_start(vp, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, vp);
+    va_end(vp);
+    fprintf(fp,
+        "{\"sessionId\":\"527ed0\",\"runId\":\"run1\",\"hypothesisId\":\"H2\","
+        "\"location\":\"z-term.c\",\"message\":\"%s\",\"data\":{},\"timestamp\":%lu}\n",
+        msg, (unsigned long)clock());
+    fclose(fp);
+#else
+    (void)fmt;
+#endif
+}
 
 /*
  * This file provides a generic, efficient, terminal window package,
@@ -2038,6 +2060,7 @@ errr Term_flush(void)
 
     /* Forget all keypresses */
     Term->key_head = Term->key_tail = 0;
+    Term->mouse_head = Term->mouse_tail = 0;
 
     /* Success */
     return (0);
@@ -2157,6 +2180,134 @@ errr Term_inkey(char *ch, bool wait, bool take)
     if (take && (++Term->key_tail == Term->key_size)) Term->key_tail = 0;
 
     /* Success */
+    return (0);
+}
+
+errr Term_mousepress_aux(int x, int y, int button, int mods)
+{
+    mouse_event_t event;
+    term *t0 = angband_term[0];
+    term *old = Term;
+
+    if (x < 0 || y < 0) return (-1);
+    if (!button) return (-1);
+
+    /* Prevent mouse_queue desync if an inkey() caller swallowed TERM_MOUSE_KEY without popping mouse_queue */
+    if (t0 && t0->key_queue)
+    {
+        bool has_pending_mouse_key = FALSE;
+        u16b idx = t0->key_tail;
+        while (idx != t0->key_head)
+        {
+            if ((unsigned char)t0->key_queue[idx] == TERM_MOUSE_KEY)
+            {
+                has_pending_mouse_key = TRUE;
+                break;
+            }
+            idx = (idx + 1) % t0->key_size;
+        }
+        if (!has_pending_mouse_key)
+        {
+            Term->mouse_head = Term->mouse_tail = 0;
+        }
+    }
+
+    event.x = (byte)x;
+    event.y = (byte)y;
+    event.button = (byte)button;
+    event.mods = (byte)mods;
+    _mouse_dbg("QUEUE PRESS x=%d y=%d b=%d mods=%d", x, y, button, mods);
+
+    Term->mouse_queue[Term->mouse_head++] = event;
+    if (Term->mouse_head == Term->mouse_size) Term->mouse_head = 0;
+
+    /*
+     * inkey() always activates angband_term[0] and reads that key queue only.
+     * Clicks on a map/status subwindow queue the mouse on this Term but must
+     * still wake the main input queue; otherwise request_command() never sees
+     * TERM_MOUSE_KEY and clicks fall through to unrelated keys / "Unknown command".
+     */
+    if (t0 && t0->key_queue)
+    {
+        Term_activate(t0);
+        Term_keypress(TERM_MOUSE_KEY);
+        Term_activate(old);
+    }
+    else
+        Term_keypress(TERM_MOUSE_KEY);
+
+    if (Term->mouse_head != Term->mouse_tail) return (0);
+
+    return (1);
+}
+
+errr Term_mousepress(int x, int y, int button)
+{
+    return Term_mousepress_aux(x, y, button, 0);
+}
+
+/*
+ * Inject a mouse hover/motion event into the queue.
+ * Uses button == 0 to distinguish from button presses.
+ * Enqueues TERM_MOUSE_MOVE_KEY so inkey() wakes up.
+ */
+errr Term_mousemove_aux(int x, int y)
+{
+    mouse_event_t event;
+    term *t0 = angband_term[0];
+    term *old = Term;
+
+    if (x < 0 || y < 0) return (-1);
+    if (!Term->mouse_queue) return (-1);
+
+    event.x = (byte)x;
+    event.y = (byte)y;
+    event.button = 0; /* 0 = hover, not a real button */
+    event.mods = 0;
+    _mouse_dbg("QUEUE MOVE x=%d y=%d", x, y);
+
+    Term->mouse_queue[Term->mouse_head++] = event;
+    if (Term->mouse_head == Term->mouse_size) Term->mouse_head = 0;
+
+    if (t0 && t0->key_queue)
+    {
+        Term_activate(t0);
+        Term_keypress(TERM_MOUSE_MOVE_KEY);
+        Term_activate(old);
+    }
+    else
+        Term_keypress(TERM_MOUSE_MOVE_KEY);
+
+    if (Term->mouse_head != Term->mouse_tail) return (0);
+    return (1);
+}
+
+errr Term_getmouse(mouse_event_t *event, bool wait, bool take)
+{
+    if (event) WIPE(event, mouse_event_t);
+
+    if (!Term->mouse_queue) return (1);
+
+    if (wait)
+    {
+        while (Term->mouse_head == Term->mouse_tail)
+        {
+            Term_xtra(TERM_XTRA_EVENT, TRUE);
+        }
+    }
+    else if (Term->mouse_head == Term->mouse_tail)
+    {
+        Term_xtra(TERM_XTRA_EVENT, FALSE);
+    }
+
+    if (Term->mouse_head == Term->mouse_tail) return (1);
+
+    if (event) *event = Term->mouse_queue[Term->mouse_tail];
+    if (event)
+        _mouse_dbg("QUEUE POP x=%d y=%d b=%d mods=%d take=%d", event->x, event->y, event->button, event->mods, take);
+
+    if (take && (++Term->mouse_tail == Term->mouse_size)) Term->mouse_tail = 0;
+
     return (0);
 }
 
@@ -2565,6 +2716,7 @@ errr term_nuke(term *t)
 
     /* Free the input queue */
     C_KILL(t->key_queue, t->key_size, char);
+    C_KILL(t->mouse_queue, t->mouse_size, mouse_event_t);
 
     /* Success */
     return (0);
@@ -2588,12 +2740,15 @@ errr term_init(term *t, int w, int h, int k)
 
     /* Prepare the input queue */
     t->key_head = t->key_tail = 0;
+    t->mouse_head = t->mouse_tail = 0;
 
     /* Determine the input queue size */
     t->key_size = k;
 
     /* Allocate the input queue */
     C_MAKE(t->key_queue, t->key_size, char);
+    t->mouse_size = k;
+    C_MAKE(t->mouse_queue, t->mouse_size, mouse_event_t);
 
 
     /* Save the size */

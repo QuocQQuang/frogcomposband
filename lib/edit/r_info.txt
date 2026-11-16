@@ -15591,7 +15591,7 @@ P:Copy:Hobbit:Rogue
 P:Body:Spider
 S:DETECT_MONSTERS
 D:Small brown spiders that lurk in the darkness deep underground.
-D: An individual would be nearly harmless, but their size allows many
+D: An indivi would be nearly harmless, but their size allows many
 D: to crawl where only a single Mirkwood spider could stand. Packs of
 D: these arachnids may scour the depths untiringly, and their hunger is
 D: never satisfied.

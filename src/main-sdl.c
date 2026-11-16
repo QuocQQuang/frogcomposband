@@ -2318,19 +2318,22 @@ static void sdl_HandleMouseEvent(SDL_Event *event)
                 /* Signal a mouse press to angband (only if the window is already focused) */
                 else if (!just_gained_focus)
                 {
-#if 0
                     if (win->visible)
                     {
+                        int mods = 0;
                         /* Calculate the 'cell' coords */
                         int x = (mouse.x - win->left - win->border) / win->tile_wid;
                         int y = (mouse.y - win->top - win->title_height) / win->tile_hgt;
+                        SDLMod mod = SDL_GetModState();
+                        if (mod & KMOD_SHIFT) mods |= TERM_MOUSE_MOD_SHIFT;
+                        if (mod & KMOD_CTRL) mods |= TERM_MOUSE_MOD_CTRL;
+                        if (mod & KMOD_ALT) mods |= TERM_MOUSE_MOD_ALT;
 
                         /* Send the mousepress to the appropriate term */
                         Term_activate(angband_term[idx]);
-                        Term_mousepress(x, y, 1);
+                        Term_mousepress_aux(x, y, TERM_MOUSE_BUTTON_LEFT, mods);
                         Term_activate(old);
                     }
-#endif
                 }
             }
 
@@ -2349,8 +2352,13 @@ static void sdl_HandleMouseEvent(SDL_Event *event)
                 /* See if it's inside a term_window */
                 else if (idx != -1)
                 {
-#if 0
                     win = &windows[idx];
+                    {
+                    int mods = 0;
+                    SDLMod mod = SDL_GetModState();
+                    if (mod & KMOD_SHIFT) mods |= TERM_MOUSE_MOD_SHIFT;
+                    if (mod & KMOD_CTRL) mods |= TERM_MOUSE_MOD_CTRL;
+                    if (mod & KMOD_ALT) mods |= TERM_MOUSE_MOD_ALT;
 
                     /* Calculate the 'cell' coords */
                     int x = (mouse.x - win->left - win->border) / win->tile_wid;
@@ -2361,10 +2369,10 @@ static void sdl_HandleMouseEvent(SDL_Event *event)
                     {
                         /* Send the mousepress to the appropriate term */
                         Term_activate(angband_term[idx]);
-                        Term_mousepress(x, y, 2);
+                        Term_mousepress_aux(x, y, TERM_MOUSE_BUTTON_RIGHT, mods);
                         Term_activate(old);
                     }
-#endif
+                    }
                 }
             }
 

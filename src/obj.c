@@ -902,8 +902,15 @@ static int _inspector(obj_prompt_context_ptr context, int cmd)
             obj_display_doc(obj, context->doc);
         doc_insert(context->doc, "<color:B>[Press <color:y>Any Key</color> to Continue]</color>\n\n");
         Term_load();
+        if (strcmp(ANGBAND_SYS, "web") == 0)
+            Term_clear();
         doc_sync_menu(context->doc);
         cmd = inkey();
+        if (cmd == TERM_MOUSE_KEY)
+        {
+            mouse_event_t ev;
+            mouse_get_event(&ev);
+        }
         return OP_CMD_HANDLED;
     }
     return OP_CMD_SKIPPED;
@@ -975,6 +982,8 @@ static int _inscriber(obj_prompt_context_ptr context, int cmd)
         doc_printf(context->doc, "Inscribing %s.\n", name);
         doc_printf(context->doc, "Inscription: ");
         Term_load();
+        if (strcmp(ANGBAND_SYS, "web") == 0)
+            Term_clear();
         doc_sync_menu(context->doc);
         if (askfor(insc, 80))
             obj->inscription = quark_add(insc);

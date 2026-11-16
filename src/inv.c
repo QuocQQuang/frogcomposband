@@ -12,18 +12,20 @@ struct inv_s
     vec_ptr objects; /* sparse ... grows as needed (up to max+1 if max is set) */
 };
 
-/* Slots: We are assuming slot <= 26 */
+/* Slots: a-z then A-Z */
 char slot_label(slot_t slot)
 {
-    assert(slot <= 26);
-    if (slot) return slot - 1 + 'a';
+    assert(slot <= 52);
+    if (1 <= slot && slot <= 26) return slot - 1 + 'a';
+    if (27 <= slot && slot <= 52) return slot - 27 + 'A';
     return ' ';
 }
 
 slot_t label_slot(char label)
 {
-    assert('a' <= label && label <= 'z');
-    return label - 'a' + 1;
+    if ('a' <= label && label <= 'z') return label - 'a' + 1;
+    if ('A' <= label && label <= 'Z') return label - 'A' + 27;
+    return 0;
 }
 
 /* Helpers */
@@ -780,12 +782,12 @@ void inv_calculate_labels(inv_ptr inv, slot_t start, slot_t stop, int flags)
         if ((obj) && (obj->scratch == ' '))
         {
             int i;
-            unsigned char lowercase[27] = "abcdefghijklmnopqrstuvwxyz";
-            for (i = 0; i < 26; i++)
+            unsigned char labels[53] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            for (i = 0; i < 52; i++)
             {
-                slot_t slot2 = inv_label_slot(inv, lowercase[i]);
+                slot_t slot2 = inv_label_slot(inv, labels[i]);
                 if (slot2) continue;
-                obj->scratch = lowercase[i];     
+                obj->scratch = labels[i];
                 break;
             }
         }

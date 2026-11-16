@@ -179,6 +179,14 @@ extern bool inkey_xtra;
 extern bool inkey_scan;
 extern bool inkey_flag;
 extern bool get_com_no_macros;
+extern bool use_mouse;
+extern bool mouse_movement;
+extern bool mouse_tooltips;
+extern bool mouse_hover_highlight;
+extern mouse_context_t mouse_context;
+extern mouse_event_t mouse_last_event;
+extern int mouse_map_y;
+extern int mouse_map_x;
 extern s16b coin_type;
 extern bool opening_chest;
 extern bool shimmer_monsters;
@@ -845,6 +853,7 @@ extern void travel_step(void);
 /* cmd2.c */
 extern void do_cmd_go_up(void);
 extern void do_cmd_go_down(void);
+extern void do_cmd_toggle_1h(void);
 extern void do_cmd_search(void);
 extern void do_cmd_open(void);
 extern void do_cmd_close(void);
@@ -915,6 +924,9 @@ extern void do_cmd_save_screen_html(void);
 extern void do_cmd_save_screen_txt(void);
 extern void save_screen_aux(cptr file, int format);
 extern void do_cmd_knowledge(void);
+extern void do_cmd_knowledge_uniques(void);
+extern void do_cmd_knowledge_kubi(void);
+extern void do_cmd_wanted_uniques(void);
 extern void display_weapon_info_aux(int mode);
 extern void plural_aux(char * Name);
 extern void do_cmd_time(void);
@@ -1808,6 +1820,8 @@ extern bool get_string(cptr prompt, char *buf, int len);
 extern bool get_check(cptr prompt);
 extern bool get_check_strict(cptr prompt, int mode);
 extern bool get_com(cptr prompt, char *command, bool z_escape);
+extern bool mouse_get_event(mouse_event_t *event);
+extern int mouse_find_choice(mouse_event_t *event);
 extern s16b get_quantity_aux(cptr prompt, int max, int default_amt);
 extern s16b get_quantity(cptr prompt, int max);
 extern void pause_line(int row);
@@ -2040,6 +2054,8 @@ extern rect_t ui_screen_rect(void);
 extern rect_t ui_shop_msg_rect(void);
 extern rect_t ui_shop_rect(void);
 extern rect_t ui_msg_rect(void);
+extern rect_t combat_log_rect(void); /* Persistent combat log area at bottom of screen */
+
 /* cf msg_line_rect() in message.h and note that the message "line" is
    really a drop down box of sorts. It may drop on top of whatever is beneath
    it (currently the map region). */
@@ -2092,6 +2108,7 @@ extern bool target_okay(void);
 extern bool target_able_aux(int m_idx, int mode);
 extern bool target_okay_aux(int mode);
 extern bool target_set(int mode);
+extern bool target_set_at(int mode, int init_y, int init_x);
 extern void target_grab(int y, int x);
 
 /* get_fire_dir will attempt to auto_target (if set) and should be used
@@ -2282,6 +2299,7 @@ extern bool object_is_flavor(object_type *o_ptr);
 extern bool object_is_potion(object_type *o_ptr);
 extern bool mon_is_wanted(int r_idx);
 extern bool object_is_shoukinkubi(object_type *o_ptr);
+extern bool object_is_wanted_corpse(object_type *o_ptr);
 extern bool object_is_favorite(object_type *o_ptr);
 extern bool object_is_rare(object_type *o_ptr);
 extern bool object_is_weapon(object_type *o_ptr);

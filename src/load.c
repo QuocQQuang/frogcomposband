@@ -798,6 +798,10 @@ static void rd_extra(savefile_ptr file)
     today_mon = savefile_read_s16b(file);
     p_ptr->today_mon = savefile_read_s16b(file);
     p_ptr->riding = savefile_read_s16b(file);
+    if (!savefile_is_older_than(file, 7, 1, 3, 7))
+        p_ptr->force_1h = savefile_read_bool(file);
+    else
+        p_ptr->force_1h = FALSE;
     p_ptr->floor_id = savefile_read_s16b(file);
     overworld_visit = savefile_is_older_than(file, 7,1,3,2) ? TRUE : savefile_read_byte(file);
 

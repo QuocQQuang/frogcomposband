@@ -1207,6 +1207,11 @@ void object_desc(char *buf, object_type *o_ptr, u32b mode)
                 else
                     basenm = "& # %";
             }
+            if (object_is_shoukinkubi(o_ptr))
+            {
+                sprintf(tmp_val2, "%s (wanted!)", modstr);
+                modstr = tmp_val2;
+            }
             break;
         }
 
@@ -2384,6 +2389,13 @@ void object_desc(char *buf, object_type *o_ptr, u32b mode)
     else if ((shops_mark_unseen) && (aware) && (!object_is_aware(o_ptr)) && (object_is_flavor(o_ptr)) && (o_ptr->loc.where == INV_SHOP))
     {
         strcpy(fake_insc_buf, "unseen");
+    }
+
+    /* Mark wanted bounty corpses for the current save */
+    if (object_is_wanted_corpse(o_ptr))
+    {
+        if (fake_insc_buf[0]) strcat(fake_insc_buf, ", ");
+        strcat(fake_insc_buf, "wanted");
     }
 
     /* Note the discount, if any */

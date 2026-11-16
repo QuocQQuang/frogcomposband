@@ -2126,6 +2126,18 @@ option_type option_info[] =
     { &command_menu,                TRUE,  OPT_PAGE_INPUT, 2, 7,
     "command_menu",                 "Enable command selection menu" },
 
+    { &use_mouse,                   TRUE,  OPT_PAGE_INPUT, 2, 8,
+    "use_mouse",                    "Enable mouse input" },
+
+    { &mouse_movement,              TRUE,  OPT_PAGE_INPUT, 2, 9,
+    "mouse_movement",               "Allow click-to-move and click-to-travel" },
+
+    { &mouse_tooltips,              TRUE,  OPT_PAGE_INPUT, 2, 10,
+    "mouse_tooltips",               "Enable mouse-aware prompts and lookups" },
+
+    { &mouse_hover_highlight,       TRUE,  OPT_PAGE_INPUT, 2, 11,
+    "mouse_hover_highlight",        "Enable mouse hover feedback when available" },
+
     { &use_old_target,              FALSE, OPT_PAGE_INPUT, 0, 4,
     "use_old_target",               "Use old target by default" },
 

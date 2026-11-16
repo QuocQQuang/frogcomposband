@@ -1686,7 +1686,7 @@ void equip_calc_bonuses(void)
     }
 
     /* Figure out which weapons are being used with 2 hands */
-    if (CAN_TWO_HANDS_WIELDING())
+    if (CAN_TWO_HANDS_WIELDING() && !p_ptr->force_1h)
     {
         for (i = 0; i < MAX_ARMS; i++)
         {

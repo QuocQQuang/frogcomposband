@@ -4040,7 +4040,15 @@ void travel_end(void)
 void do_cmd_travel(void)
 {
     int x, y;
-    if (!tgt_pt(&x, &y, -1)) return;
+    if (in_bounds(mouse_map_y, mouse_map_x) && (mouse_context == MOUSE_CTX_MAP || mouse_context == MOUSE_CTX_TARGET))
+    {
+        x = mouse_map_x;
+        y = mouse_map_y;
+    }
+    else
+    {
+        if (!tgt_pt(&x, &y, -1)) return;
+    }
     travel_begin(TRAVEL_MODE_NORMAL, x, y);
 }
 

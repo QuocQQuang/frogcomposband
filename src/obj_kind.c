@@ -67,6 +67,8 @@ bool mon_is_wanted(int r_idx)
     return BOOL(r_info[r_idx].flagsx & RFX_WANTED);
 }
 
+bool object_is_wanted_corpse(object_type *o_ptr);
+
 bool object_is_shoukinkubi(object_type *o_ptr)
 {
     /* Require corpse or skeleton */
@@ -81,13 +83,22 @@ bool object_is_shoukinkubi(object_type *o_ptr)
     if ((o_ptr->pval == MON_TSUCHINOKO) && (o_ptr->sval < SV_BODY_HEAD)) return TRUE;
 
     /* Unique monster */
-    if (mon_is_wanted((o_ptr->sval == SV_BODY_HEAD) ? o_ptr->xtra4 : o_ptr->pval)) return TRUE;
+    if (object_is_wanted_corpse(o_ptr)) return TRUE;
 
     /* Implorington */
     if ((!no_wilderness) && (o_ptr->pval == MON_IMPLORINGTON)) return TRUE;
 
     /* Not wanted */
     return FALSE;
+}
+
+bool object_is_wanted_corpse(object_type *o_ptr)
+{
+    /* Only corpses/skeletons and valid body parts are candidates */
+    if (o_ptr->tval != TV_CORPSE) return FALSE;
+    if ((o_ptr->sval > SV_BODY_HEAD) && (o_ptr->sval != SV_BODY_EARS)) return FALSE;
+
+    return mon_is_wanted((o_ptr->sval == SV_BODY_HEAD) ? o_ptr->xtra4 : o_ptr->pval);
 }
 
 

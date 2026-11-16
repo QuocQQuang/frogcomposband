@@ -312,6 +312,25 @@ static void web_handle_line(cptr line)
     {
         web_emit_frame(TRUE);
     }
+    else if (streq(type, "save_quit"))
+    {
+        if (!character_generated || !character_dungeon)
+        {
+            quit(NULL);
+        }
+        else if (can_save && !character_icky)
+        {
+            term *old = Term;
+            Term_activate(&web_terms[0].t);
+            Term_keypress(KTRL('X'));
+            if (old) Term_activate(old);
+        }
+        else
+        {
+            fputs("{\"type\":\"save_blocked\",\"msg\":\"Exit current menu or prompt first before saving, or choose Force Exit.\"}\n", stdout);
+            fflush(stdout);
+        }
+    }
     else if (streq(type, "quit"))
     {
         quit(NULL);
@@ -440,117 +459,463 @@ static void web_poll_input(bool block)
     }
 }
 
-static bool web_build_grid_desc(int cy, int cx, char *title, int tsz, char *sub, int ssz, int *hp_pct, int *att)
+static void web_hover_badge(FILE *fp, bool *first, cptr label, cptr kind)
 {
-    cave_type *c_ptr;
-    feature_type *f_ptr;
-    bool known = FALSE;
+    if (!label || !label[0]) return;
+    if (!*first) fputc(',', fp);
+    *first = FALSE;
+    fputs("{\"label\":", fp);
+    web_json_str(fp, label);
+    fputs(",\"kind\":", fp);
+    web_json_str(fp, kind ? kind : "neutral");
+    fputc('}', fp);
+}
 
-    title[0] = '\0';
-    sub[0] = '\0';
-    *hp_pct = -1;
-    *att = -1;
+static void web_hover_detail(FILE *fp, bool *first, cptr text)
+{
+    if (!text || !text[0]) return;
+    if (!*first) fputc(',', fp);
+    *first = FALSE;
+    web_json_str(fp, text);
+}
 
-    if (!in_bounds(cy, cx)) return FALSE;
-    c_ptr = &cave[cy][cx];
-
-    if (player_bold(cy, cx))
+static void web_append_token(char *buf, int bsz, cptr tok)
+{
+    int len = (int)strlen(buf);
+    if (!tok || !tok[0]) return;
+    if (len > 0 && len + 2 < bsz)
     {
-        sprintf(title, "%s", player_name[0] ? player_name : "You");
-        sprintf(sub, "Level %d %s %s", p_ptr->lev, get_race()->name, get_class()->name);
-        *hp_pct = (p_ptr->mhp > 0) ? (int)((100L * p_ptr->chp) / p_ptr->mhp) : 100;
-        *att = 2;
-        return TRUE;
+        strcat(buf, ", ");
+        len += 2;
     }
-
-    if (c_ptr->m_idx > 0)
-    {
-        monster_type *m_ptr = &m_list[c_ptr->m_idx];
-        if (m_ptr->ml)
-        {
-            char mname[128];
-            monster_desc(mname, m_ptr, MD_IGNORE_HALLU | MD_ASSUME_VISIBLE);
-            my_strcpy(title, mname, tsz);
-            if (is_pet(m_ptr)) *att = 2;
-            else if (is_friendly(m_ptr)) *att = 1;
-            else *att = 0;
-
-            if (m_ptr->maxhp > 0)
-                *hp_pct = (int)((100L * MAX(0, m_ptr->hp)) / m_ptr->maxhp);
-
-            if (MON_CSLEEP(m_ptr))
-                my_strcpy(sub, "Sleeping", ssz);
-            else if (is_pet(m_ptr))
-                my_strcpy(sub, "Pet (Ally)", ssz);
-            else if (is_friendly(m_ptr))
-                my_strcpy(sub, "Friendly", ssz);
-            else
-                my_strcpy(sub, "Hostile", ssz);
-            known = TRUE;
-        }
-    }
-
-    if (c_ptr->o_idx > 0 && ((c_ptr->info & (CAVE_MARK | CAVE_VIEW)) != 0 || p_ptr->inside_battle))
-    {
-        object_type *o_ptr = &o_list[c_ptr->o_idx];
-        if (o_ptr->marked & OM_FOUND)
-        {
-            char oname[128];
-            object_desc(oname, o_ptr, 0);
-            if (!known)
-            {
-                my_strcpy(title, oname, tsz);
-                known = TRUE;
-            }
-            else if (!sub[0])
-            {
-                my_strcpy(sub, oname, ssz);
-            }
-        }
-    }
-
-    if ((c_ptr->info & (CAVE_MARK | CAVE_VIEW | CAVE_AWARE)) != 0)
-    {
-        int f_idx = c_ptr->mimic ? c_ptr->mimic : c_ptr->feat;
-        f_ptr = &f_info[f_idx];
-        if (!known)
-        {
-            my_strcpy(title, f_name + f_ptr->name, tsz);
-            known = TRUE;
-        }
-        else if (!sub[0])
-        {
-            my_strcpy(sub, f_name + f_ptr->name, ssz);
-        }
-    }
-
-    return known;
+    if (len + (int)strlen(tok) + 1 < bsz)
+        strcat(buf, tok);
 }
 
 static void web_emit_hover_info(int ui_x, int ui_y)
 {
     rect_t mr = ui_map_rect();
     point_t cp;
-    char title[128], sub[128];
+    cave_type *c_ptr;
+    feature_type *f_ptr = NULL;
+    char title[160], sub[192], feat_name[96];
+    char kind[24];
     int hp_pct = -1, att = -1;
+    int rng, proj, los;
+    bool known = FALSE;
+    bool is_player = FALSE;
+    monster_type *m_ptr = NULL;
+    object_type *o_ptr = NULL;
+    int pile_ct = 0;
+    int f_idx = 0;
 
     if (ui_x < mr.x || ui_x >= mr.x + mr.cx || ui_y < mr.y || ui_y >= mr.y + mr.cy)
         return;
 
     cp = ui_pt_to_cave_pt(point(ui_x, ui_y));
-    if (!web_build_grid_desc(cp.y, cp.x, title, sizeof(title), sub, sizeof(sub), &hp_pct, &att))
+    if (!in_bounds(cp.y, cp.x))
     {
         fprintf(stdout, "{\"type\":\"hover\",\"x\":%d,\"y\":%d,\"valid\":false}\n", ui_x, ui_y);
         fflush(stdout);
         return;
     }
 
-    fprintf(stdout, "{\"type\":\"hover\",\"x\":%d,\"y\":%d,\"valid\":true,\"cx\":%d,\"cy\":%d,\"title\":",
-            ui_x, ui_y, cp.x, cp.y);
+    c_ptr = &cave[cp.y][cp.x];
+    title[0] = '\0';
+    sub[0] = '\0';
+    feat_name[0] = '\0';
+    strcpy(kind, "terrain");
+
+    if ((c_ptr->info & (CAVE_MARK | CAVE_VIEW | CAVE_AWARE)) != 0 || p_ptr->inside_battle)
+    {
+        f_idx = c_ptr->mimic ? c_ptr->mimic : c_ptr->feat;
+        f_ptr = &f_info[f_idx];
+        my_strcpy(feat_name, f_name + f_ptr->name, sizeof(feat_name));
+    }
+
+    if (player_bold(cp.y, cp.x))
+    {
+        is_player = TRUE;
+        known = TRUE;
+        strcpy(kind, "player");
+        my_strcpy(title, player_name[0] ? player_name : "You", sizeof(title));
+        if (p_ptr->msp > 0)
+            strnfmt(sub, sizeof(sub), "Lv %d %s %s · HP %d/%d · SP %d/%d",
+                    p_ptr->lev, get_race()->name, get_class()->name,
+                    p_ptr->chp, p_ptr->mhp, p_ptr->csp, p_ptr->msp);
+        else
+            strnfmt(sub, sizeof(sub), "Lv %d %s %s · HP %d/%d",
+                    p_ptr->lev, get_race()->name, get_class()->name,
+                    p_ptr->chp, p_ptr->mhp);
+        hp_pct = (p_ptr->mhp > 0) ? (int)((100L * MAX(0, p_ptr->chp)) / p_ptr->mhp) : 100;
+        att = 2;
+    }
+    else if (c_ptr->m_idx > 0 && m_list[c_ptr->m_idx].ml)
+    {
+        cptr alleg;
+        m_ptr = &m_list[c_ptr->m_idx];
+        known = TRUE;
+        strcpy(kind, "monster");
+        monster_desc(title, m_ptr, MD_IGNORE_HALLU | MD_ASSUME_VISIBLE);
+        if (is_pet(m_ptr)) att = 2;
+        else if (is_friendly(m_ptr)) att = 1;
+        else att = 0;
+
+        if (m_ptr->maxhp > 0)
+            hp_pct = (int)((100L * MAX(0, m_ptr->hp)) / m_ptr->maxhp);
+
+        alleg = is_pet(m_ptr) ? "Pet" : (is_friendly(m_ptr) ? "Friendly" : "Hostile");
+        if (m_ptr->maxhp > 0)
+            strnfmt(sub, sizeof(sub), "%s · %s (%d/%d HP)", alleg, mon_health_desc(m_ptr), m_ptr->hp, m_ptr->maxhp);
+        else
+            strnfmt(sub, sizeof(sub), "%s · %s", alleg, mon_health_desc(m_ptr));
+    }
+
+    if (c_ptr->o_idx > 0 && ((c_ptr->info & (CAVE_MARK | CAVE_VIEW)) != 0 || p_ptr->inside_battle))
+    {
+        s16b cur = c_ptr->o_idx;
+        while (cur > 0)
+        {
+            object_type *it = &o_list[cur];
+            if (it->marked & OM_FOUND)
+            {
+                if (!o_ptr) o_ptr = it;
+                pile_ct++;
+            }
+            cur = it->next_o_idx;
+        }
+        if (o_ptr && !known)
+        {
+            known = TRUE;
+            strcpy(kind, "item");
+            object_desc(title, o_ptr, 0);
+            if (pile_ct > 1)
+                strnfmt(sub, sizeof(sub), "Stack of %d items here (top shown)", pile_ct);
+            else if (object_is_artifact(o_ptr))
+                my_strcpy(sub, "Artifact", sizeof(sub));
+            else if (object_is_ego(o_ptr))
+                my_strcpy(sub, "Ego Item", sizeof(sub));
+            else if (obj_is_identified(o_ptr))
+                my_strcpy(sub, "Identified Item", sizeof(sub));
+            else
+                my_strcpy(sub, "Unidentified Item", sizeof(sub));
+        }
+    }
+
+    if (!known && f_ptr)
+    {
+        known = TRUE;
+        strcpy(kind, "terrain");
+        my_strcpy(title, feat_name, sizeof(title));
+        if (have_flag(f_ptr->flags, FF_STORE))
+            my_strcpy(sub, "Shop / Building Entrance", sizeof(sub));
+        else if (have_flag(f_ptr->flags, FF_BLDG))
+            my_strcpy(sub, "Service Building", sizeof(sub));
+        else if (have_flag(f_ptr->flags, FF_STAIRS))
+            my_strcpy(sub, have_flag(f_ptr->flags, FF_LESS) ? "Stairs Up (<)" : "Stairs Down (>)", sizeof(sub));
+        else if (have_flag(f_ptr->flags, FF_TRAP))
+            my_strcpy(sub, "Detected Trap", sizeof(sub));
+        else if (have_flag(f_ptr->flags, FF_DOOR))
+            my_strcpy(sub, have_flag(f_ptr->flags, FF_MOVE) ? "Open Door" : "Closed / Locked Door", sizeof(sub));
+        else if (!have_flag(f_ptr->flags, FF_MOVE))
+            my_strcpy(sub, have_flag(f_ptr->flags, FF_PERMANENT) ? "Permanent Obstacle" : "Blocked Terrain", sizeof(sub));
+        else
+            my_strcpy(sub, "Walkable Terrain", sizeof(sub));
+    }
+
+    if (!known)
+    {
+        fprintf(stdout, "{\"type\":\"hover\",\"x\":%d,\"y\":%d,\"valid\":false}\n", ui_x, ui_y);
+        fflush(stdout);
+        return;
+    }
+
+    rng = distance(py, px, cp.y, cp.x);
+    proj = projectable(py, px, cp.y, cp.x) ? 1 : 0;
+    los = player_has_los_bold(cp.y, cp.x) ? 1 : 0;
+
+    fprintf(stdout, "{\"type\":\"hover\",\"x\":%d,\"y\":%d,\"valid\":true,\"cx\":%d,\"cy\":%d,\"rng\":%d,\"proj\":%d,\"los\":%d,\"kind\":",
+            ui_x, ui_y, cp.x, cp.y, rng, proj, los);
+    web_json_str(stdout, kind);
+    fputs(",\"title\":", stdout);
     web_json_str(stdout, title);
     fputs(",\"sub\":", stdout);
     web_json_str(stdout, sub);
-    fprintf(stdout, ",\"hp\":%d,\"att\":%d}\n", hp_pct, att);
+    fprintf(stdout, ",\"hp\":%d,\"att\":%d", hp_pct, att);
+
+    /* Badges array */
+    fputs(",\"badges\":[", stdout);
+    {
+        bool first_b = TRUE;
+        char bbuf[96];
+        if (is_player)
+        {
+            int pspd = p_ptr->pspeed - 110;
+            strnfmt(bbuf, sizeof(bbuf), "AC %d", p_ptr->dis_ac + p_ptr->dis_to_a);
+            web_hover_badge(stdout, &first_b, bbuf, "info");
+            strnfmt(bbuf, sizeof(bbuf), "Speed %s%d", pspd >= 0 ? "+" : "", pspd);
+            web_hover_badge(stdout, &first_b, bbuf, pspd > 0 ? "good" : (pspd < 0 ? "bad" : "neutral"));
+            if (p_ptr->poisoned > 0) web_hover_badge(stdout, &first_b, "Poisoned", "bad");
+            if (p_ptr->blind > 0) web_hover_badge(stdout, &first_b, "Blind", "bad");
+            if (p_ptr->confused > 0) web_hover_badge(stdout, &first_b, "Confused", "bad");
+            if (p_ptr->stun > 0) web_hover_badge(stdout, &first_b, "Stunned", "bad");
+            if (p_ptr->cut > 0) web_hover_badge(stdout, &first_b, "Bleeding", "bad");
+            if (p_ptr->afraid > 0) web_hover_badge(stdout, &first_b, "Afraid", "bad");
+            if (p_ptr->fast > 0 || p_ptr->lightspeed > 0) web_hover_badge(stdout, &first_b, "Haste", "good");
+            if (p_ptr->hero > 0) web_hover_badge(stdout, &first_b, "Heroism", "good");
+            if (p_ptr->shero > 0) web_hover_badge(stdout, &first_b, "Berserk", "good");
+            if (p_ptr->blessed > 0) web_hover_badge(stdout, &first_b, "Blessed", "good");
+            if (p_ptr->shield > 0) web_hover_badge(stdout, &first_b, "Shield", "good");
+        }
+        else if (m_ptr)
+        {
+            monster_race *r_ptr = &r_info[m_ptr->r_idx];
+            monster_race *ap_ptr = mon_apparent_race(m_ptr);
+
+            /* Live statuses */
+            if (MON_CSLEEP(m_ptr)) web_hover_badge(stdout, &first_b, "Sleeping", "good");
+            if (MON_PARALYZED(m_ptr)) web_hover_badge(stdout, &first_b, "Paralyzed", "good");
+            if (MON_STUNNED(m_ptr)) web_hover_badge(stdout, &first_b, "Stunned", "good");
+            if (MON_CONFUSED(m_ptr)) web_hover_badge(stdout, &first_b, "Confused", "good");
+            if (MON_MONFEAR(m_ptr)) web_hover_badge(stdout, &first_b, "Afraid", "good");
+            if (MON_SLOW(m_ptr)) web_hover_badge(stdout, &first_b, "Slowed", "good");
+            if (MON_FAST(m_ptr)) web_hover_badge(stdout, &first_b, "Hasted", "warn");
+            if (MON_INVULNER(m_ptr)) web_hover_badge(stdout, &first_b, "Invulnerable", "bad");
+            if (target_who == c_ptr->m_idx) web_hover_badge(stdout, &first_b, "Locked Target", "accent");
+            if (p_ptr->riding == c_ptr->m_idx) web_hover_badge(stdout, &first_b, "Mounted", "good");
+
+            /* Capture rules matching GF_CAPTURE in gf.c */
+            if (!quests_allow_all_spells() && !is_pet(m_ptr))
+            {
+                web_hover_badge(stdout, &first_b, "Capture: Quest Blocked", "warn");
+            }
+            else if ((r_ptr->flags7 & RF7_UNIQUE2) || (m_ptr->mflag2 & MFLAG2_QUESTOR) ||
+                     m_ptr->r_idx == MON_BANOR || m_ptr->r_idx == MON_LUPART ||
+                     m_ptr->r_idx == MON_BANORLUPART || (m_ptr->smart & (1U << SM_CLONED)) ||
+                     m_ptr->parent_m_idx)
+            {
+                web_hover_badge(stdout, &first_b, "Uncapturable", "neutral");
+            }
+            else if (((r_ptr->flags1 & RF1_UNIQUE) || (r_ptr->flags7 & RF7_NAZGUL)) && !is_pet(m_ptr))
+            {
+                web_hover_badge(stdout, &first_b, "Unique (No Capture)", "neutral");
+            }
+            else if (is_pet(m_ptr))
+            {
+                web_hover_badge(stdout, &first_b, "Capturable (Pet)", "good");
+            }
+            else
+            {
+                int nokori_hp;
+                int pct;
+                if ((p_ptr->pclass == CLASS_BEASTMASTER && monster_living(r_ptr)) || p_ptr->easy_capture)
+                {
+                    nokori_hp = m_ptr->maxhp * 3 / 10;
+                    pct = 30;
+                }
+                else if (warlock_is_(WARLOCK_DRAGONS) && (r_ptr->flags3 & RF3_DRAGON))
+                {
+                    nokori_hp = m_ptr->maxhp * 3 / 15;
+                    pct = 20;
+                }
+                else
+                {
+                    nokori_hp = m_ptr->maxhp * 3 / 20;
+                    pct = 15;
+                }
+                if (m_ptr->hp < nokori_hp)
+                {
+                    strnfmt(bbuf, sizeof(bbuf), "Ready to Capture (<%d HP)", nokori_hp);
+                    web_hover_badge(stdout, &first_b, bbuf, "good");
+                }
+                else
+                {
+                    strnfmt(bbuf, sizeof(bbuf), "Capturable (<%d HP / %d%%)", nokori_hp, pct);
+                    web_hover_badge(stdout, &first_b, bbuf, "info");
+                }
+            }
+
+            /* Classification & tactical traits */
+            if (ap_ptr->flags1 & RF1_UNIQUE) web_hover_badge(stdout, &first_b, "Unique", "accent");
+            if (ap_ptr->flags7 & RF7_RIDING) web_hover_badge(stdout, &first_b, "Mountable", "info");
+            if (ap_ptr->spells && ap_ptr->spells->freq > 0)
+            {
+                strnfmt(bbuf, sizeof(bbuf), "Caster 1/%d", (int)ap_ptr->spells->freq);
+                web_hover_badge(stdout, &first_b, bbuf, "warn");
+            }
+            if (ap_ptr->flags2 & RF2_MULTIPLY) web_hover_badge(stdout, &first_b, "Breeder", "warn");
+            if (ap_ptr->flags2 & RF2_INVISIBLE) web_hover_badge(stdout, &first_b, "Invisible", "warn");
+            if (ap_ptr->flags2 & RF2_PASS_WALL) web_hover_badge(stdout, &first_b, "Pass Wall", "warn");
+            if (ap_ptr->flags2 & RF2_REFLECTING) web_hover_badge(stdout, &first_b, "Reflects", "warn");
+            if (ap_ptr->flags2 & RF2_REGENERATE) web_hover_badge(stdout, &first_b, "Regenerates", "warn");
+            if (ap_ptr->flags3 & RF3_UNDEAD) web_hover_badge(stdout, &first_b, "Undead", "neutral");
+            if (ap_ptr->flags3 & RF3_DEMON) web_hover_badge(stdout, &first_b, "Demon", "bad");
+            if (ap_ptr->flags3 & RF3_DRAGON) web_hover_badge(stdout, &first_b, "Dragon", "warn");
+            if (ap_ptr->flags3 & RF3_EVIL) web_hover_badge(stdout, &first_b, "Evil", "bad");
+            else if (ap_ptr->flags3 & RF3_GOOD) web_hover_badge(stdout, &first_b, "Good", "good");
+            if (ap_ptr->flags3 & RF3_ANIMAL) web_hover_badge(stdout, &first_b, "Animal", "neutral");
+            if (ap_ptr->flags3 & RF3_NONLIVING) web_hover_badge(stdout, &first_b, "Nonliving", "neutral");
+        }
+        else if (o_ptr)
+        {
+            if (object_is_artifact(o_ptr)) web_hover_badge(stdout, &first_b, "Artifact", "accent");
+            else if (object_is_ego(o_ptr)) web_hover_badge(stdout, &first_b, "Ego", "good");
+            if (obj_is_identified(o_ptr))
+            {
+                s32b val = obj_value(o_ptr);
+                web_hover_badge(stdout, &first_b, "Identified", "info");
+                if (val > 0)
+                {
+                    strnfmt(bbuf, sizeof(bbuf), "Value ~%ld gp", (long)val);
+                    web_hover_badge(stdout, &first_b, bbuf, "accent");
+                }
+            }
+            else
+            {
+                web_hover_badge(stdout, &first_b, "Unidentified", "warn");
+            }
+            if (pile_ct > 1)
+            {
+                strnfmt(bbuf, sizeof(bbuf), "Pile (%d)", pile_ct);
+                web_hover_badge(stdout, &first_b, bbuf, "info");
+            }
+        }
+        else if (f_ptr)
+        {
+            if (have_flag(f_ptr->flags, FF_STORE) || have_flag(f_ptr->flags, FF_BLDG))
+                web_hover_badge(stdout, &first_b, "Enterable (<)", "accent");
+            else if (have_flag(f_ptr->flags, FF_STAIRS))
+                web_hover_badge(stdout, &first_b, have_flag(f_ptr->flags, FF_LESS) ? "Go Up (<)" : "Go Down (>)", "accent");
+            else if (have_flag(f_ptr->flags, FF_MOVE))
+                web_hover_badge(stdout, &first_b, "Passable", "good");
+            else
+                web_hover_badge(stdout, &first_b, "Blocked", "bad");
+
+            if (have_flag(f_ptr->flags, FF_CAN_DIG)) web_hover_badge(stdout, &first_b, "Diggable", "info");
+            if (have_flag(f_ptr->flags, FF_PERMANENT)) web_hover_badge(stdout, &first_b, "Permanent", "neutral");
+            if (!have_flag(f_ptr->flags, FF_LOS)) web_hover_badge(stdout, &first_b, "Blocks Sight", "warn");
+            if (have_flag(f_ptr->flags, FF_WATER)) web_hover_badge(stdout, &first_b, "Water", "info");
+            if (have_flag(f_ptr->flags, FF_LAVA)) web_hover_badge(stdout, &first_b, "Lava", "bad");
+            if (have_flag(f_ptr->flags, FF_TREE)) web_hover_badge(stdout, &first_b, "Tree", "good");
+            if (c_ptr->info & (CAVE_GLOW | CAVE_LITE)) web_hover_badge(stdout, &first_b, "Lit", "neutral");
+            else web_hover_badge(stdout, &first_b, "Dark", "neutral");
+        }
+    }
+    fputs("]", stdout);
+
+    /* Details lines array */
+    fputs(",\"details\":[", stdout);
+    {
+        bool first_d = TRUE;
+        char dbuf[256];
+        if (is_player)
+        {
+            strnfmt(dbuf, sizeof(dbuf), "Light Radius: %d · Depth: %s",
+                    p_ptr->cur_lite,
+                    dun_level > 0 ? format("%d ft (Lv %d)", dun_level * 50, dun_level) : "Town");
+            web_hover_detail(stdout, &first_d, dbuf);
+            if (feat_name[0])
+            {
+                strnfmt(dbuf, sizeof(dbuf), "Standing on: %s", feat_name);
+                web_hover_detail(stdout, &first_d, dbuf);
+            }
+            web_hover_detail(stdout, &first_d, "Click self: Wait 1 turn · Shift+Click: Rest");
+        }
+        else if (m_ptr)
+        {
+            monster_race *ap_ptr = mon_apparent_race(m_ptr);
+            int mspd = (int)m_ptr->mspeed - 110;
+            int pspd = (int)p_ptr->pspeed - 110;
+            int sdiff = mspd - pspd;
+            cptr rel = (sdiff > 0) ? "faster than you" : ((sdiff < 0) ? "slower than you" : "same speed");
+            int blow_ct = 0;
+            int bi;
+            char weak[128], res[192];
+
+            for (bi = 0; bi < MAX_MON_BLOWS; bi++)
+                if (ap_ptr->blows[bi].method) blow_ct++;
+
+            strnfmt(dbuf, sizeof(dbuf), "Lv %d · AC %d · Speed %s%d (%s)",
+                    (int)ap_ptr->level, mon_ac(m_ptr), mspd >= 0 ? "+" : "", mspd, rel);
+            web_hover_detail(stdout, &first_d, dbuf);
+
+            strnfmt(dbuf, sizeof(dbuf), "EXP: %ld · Melee blows: %d%s",
+                    (long)ap_ptr->mexp, blow_ct, m_ptr->hold_o_idx ? " · Carrying item" : "");
+            web_hover_detail(stdout, &first_d, dbuf);
+
+            weak[0] = '\0';
+            if (ap_ptr->flags3 & RF3_HURT_FIRE) web_append_token(weak, sizeof(weak), "Fire");
+            if (ap_ptr->flags3 & RF3_HURT_COLD) web_append_token(weak, sizeof(weak), "Cold");
+            if (ap_ptr->flags3 & RF3_HURT_LITE) web_append_token(weak, sizeof(weak), "Light");
+            if (ap_ptr->flags3 & RF3_HURT_ROCK) web_append_token(weak, sizeof(weak), "Rock Remover");
+            if (weak[0])
+            {
+                strnfmt(dbuf, sizeof(dbuf), "Weak to: %s", weak);
+                web_hover_detail(stdout, &first_d, dbuf);
+            }
+
+            res[0] = '\0';
+            if (ap_ptr->flagsr & RFR_RES_ALL) web_append_token(res, sizeof(res), "All Elements");
+            else
+            {
+                if (ap_ptr->flagsr & RFR_EFF_IM_ACID_MASK) web_append_token(res, sizeof(res), "Acid");
+                if (ap_ptr->flagsr & RFR_EFF_IM_ELEC_MASK) web_append_token(res, sizeof(res), "Elec");
+                if (ap_ptr->flagsr & RFR_EFF_IM_FIRE_MASK) web_append_token(res, sizeof(res), "Fire");
+                if (ap_ptr->flagsr & RFR_EFF_IM_COLD_MASK) web_append_token(res, sizeof(res), "Cold");
+                if (ap_ptr->flagsr & RFR_EFF_IM_POIS_MASK) web_append_token(res, sizeof(res), "Poison");
+                if (ap_ptr->flagsr & RFR_RES_NETH) web_append_token(res, sizeof(res), "Nether");
+                if (ap_ptr->flagsr & RFR_RES_CHAO) web_append_token(res, sizeof(res), "Chaos");
+                if (ap_ptr->flagsr & RFR_RES_DISI) web_append_token(res, sizeof(res), "Disint");
+                if (ap_ptr->flagsr & RFR_RES_TELE) web_append_token(res, sizeof(res), "Teleport");
+            }
+            if (res[0])
+            {
+                strnfmt(dbuf, sizeof(dbuf), "Resists: %s", res);
+                web_hover_detail(stdout, &first_d, dbuf);
+            }
+
+            if (o_ptr)
+            {
+                char oname[96];
+                object_desc(oname, o_ptr, 0);
+                strnfmt(dbuf, sizeof(dbuf), "Item under: %s%s", oname,
+                        pile_ct > 1 ? format(" (+%d more)", pile_ct - 1) : "");
+                web_hover_detail(stdout, &first_d, dbuf);
+            }
+            else if (feat_name[0])
+            {
+                strnfmt(dbuf, sizeof(dbuf), "Tile: %s", feat_name);
+                web_hover_detail(stdout, &first_d, dbuf);
+            }
+            web_hover_detail(stdout, &first_d, "Right-click: Inspect · Ctrl+Click: Lock Target");
+        }
+        else if (o_ptr)
+        {
+            int tot_w = (int)o_ptr->weight * MAX(1, (int)o_ptr->number);
+            strnfmt(dbuf, sizeof(dbuf), "Weight: %d.%d lb%s",
+                    tot_w / 10, tot_w % 10,
+                    feat_name[0] ? format(" · Tile: %s", feat_name) : "");
+            web_hover_detail(stdout, &first_d, dbuf);
+            if (o_ptr->inscription)
+            {
+                strnfmt(dbuf, sizeof(dbuf), "Note: {%s}", quark_str(o_ptr->inscription));
+                web_hover_detail(stdout, &first_d, dbuf);
+            }
+            web_hover_detail(stdout, &first_d, "Left-click: Travel here · Right-click: Look");
+        }
+        else if (f_ptr)
+        {
+            if (have_flag(f_ptr->flags, FF_STORE) || have_flag(f_ptr->flags, FF_BLDG))
+                web_hover_detail(stdout, &first_d, "Walk onto entrance or press < to enter");
+            else if (have_flag(f_ptr->flags, FF_STAIRS))
+                web_hover_detail(stdout, &first_d, "Stand here and press < or > to change level");
+            else if (have_flag(f_ptr->flags, FF_DOOR) && !have_flag(f_ptr->flags, FF_MOVE))
+                web_hover_detail(stdout, &first_d, "Press o (Open) or move into door");
+            else
+                web_hover_detail(stdout, &first_d, "Left-click: Move / Travel · Right-click: Look");
+        }
+    }
+    fputs("]}\n", stdout);
     fflush(stdout);
 }
 
@@ -609,6 +974,11 @@ static char web_classify_cell(int cy, int cx)
 
     f_idx = c_ptr->mimic ? c_ptr->mimic : c_ptr->feat;
     f_ptr = &f_info[f_idx];
+    if (have_flag(f_ptr->flags, FF_SECRET) && f_ptr->mimic)
+    {
+        f_idx = f_ptr->mimic;
+        f_ptr = &f_info[f_idx];
+    }
 
     if (have_flag(f_ptr->flags, FF_STORE)) return 'S';
     if (have_flag(f_ptr->flags, FF_STAIRS))
@@ -649,16 +1019,61 @@ static char web_classify_cell(int cy, int cx)
     return 'G';
 }
 
+static void web_extract_row0(char *out, int out_sz)
+{
+    term *t = &web_terms[0].t;
+    int x, lim, last = -1;
+    out[0] = '\0';
+    if (!t->scr) return;
+    lim = MIN((int)t->wid, out_sz - 1);
+    for (x = 0; x < lim; x++)
+    {
+        unsigned char c = (unsigned char)t->scr->c[0][x];
+        char ch = (c >= 32 && c < 127) ? (char)c : ' ';
+        out[x] = ch;
+        if (ch != ' ') last = x;
+    }
+    out[last + 1] = '\0';
+}
+
+static cptr web_detect_prompt_kind(cptr row0)
+{
+    if (!character_generated) return "birth";
+    if (character_dungeon && !character_icky && inkey_flag) return "none";
+    if (mouse_context == MOUSE_CTX_TARGET) return "target";
+    if (row0 && (strstr(row0, "-more-") || strstr(row0, "--More--"))) return "more";
+    if (row0 && (strstr(row0, "[y/n]") || strstr(row0, "[Y/n]") || strstr(row0, "[n/Y]") || strstr(row0, "[y/N]") || strstr(row0, "Are you sure")))
+        return "yn";
+    if (row0 && (strstr(row0, "Direction") || strstr(row0, "direction")))
+        return "dir";
+    if (character_icky || mouse_context == MOUSE_CTX_MENU || mouse_context == MOUSE_CTX_SHOP || mouse_context == MOUSE_CTX_INVENTORY)
+        return "menu";
+    if (row0 && strchr(row0, ':')) return "input";
+    return "prompt";
+}
+
 static void web_emit_state(FILE *fp)
 {
     cptr graf_name = web_graf_mode ? web_graf_mode : "ascii";
+    char row0[160];
+    cptr pkind;
+    bool busy = (running || travel.run || command_rep || (character_generated && p_ptr->action == ACTION_REST));
 
-    fprintf(fp, "{\"gen\":%s,\"dungeon\":%s,\"icky\":%s,\"cmdReady\":%s,\"ctx\":%d,\"graf\":",
+    web_extract_row0(row0, sizeof(row0));
+    pkind = web_detect_prompt_kind(row0);
+
+    fprintf(fp, "{\"gen\":%s,\"dungeon\":%s,\"icky\":%s,\"cmdReady\":%s,\"canSave\":%s,\"busy\":%s,\"ctx\":%d,\"promptKind\":",
             character_generated ? "true" : "false",
             character_dungeon ? "true" : "false",
             character_icky ? "true" : "false",
             inkey_flag ? "true" : "false",
+            (can_save && !character_icky) ? "true" : "false",
+            busy ? "true" : "false",
             (int)mouse_context);
+    web_json_str(fp, pkind);
+    fputs(",\"promptText\":", fp);
+    web_json_str(fp, row0);
+    fputs(",\"graf\":", fp);
     web_json_str(fp, graf_name);
 
     if (character_generated)
@@ -1039,6 +1454,7 @@ static errr Term_xtra_web(int n, int v)
         if (v > 0)
         {
             web_emit_frame(FALSE);
+            web_poll_input(FALSE);
 #ifdef WINDOWS
             Sleep((DWORD)v);
 #else

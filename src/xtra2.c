@@ -2909,8 +2909,8 @@ bool mon_take_hit(int m_idx, int dam, int type, bool *fear, cptr note)
     /* Genocided by chaos patron */
     if (!m_idx) return TRUE;
 
-    if (dam > 0 && (p_ptr->wizard || cheat_xtra || easy_damage))
-        msg_format("You do %d damage.", dam);
+    if (dam > 0)
+        cmsg_format(TERM_ORANGE, "You do %d damage.", dam);
 
     if ( p_ptr->melt_armor
       && note == NULL /* Hack: Trying to just get melee and shooting */
@@ -3470,7 +3470,7 @@ rect_t ui_map_rect(void)
         0,
         1,
         Term->wid - 12 - 1,
-        Term->hgt - 1 - 1
+        Term->hgt - 1 - 1 - COMBAT_LOG_LINES  /* Leave bottom COMBAT_LOG_LINES rows for combat log */
     );
 }
 
@@ -3493,6 +3493,17 @@ rect_t ui_shop_msg_rect(void)
 rect_t ui_msg_rect(void)
 {
     return rect(0, 0, MIN(72, Term->wid - 13), 10);
+}
+
+/* Area for the persistent combat log at the bottom of the screen */
+rect_t combat_log_rect(void)
+{
+    return rect(
+        0,
+        Term->hgt - 1 - COMBAT_LOG_LINES,  /* First of the 5 bottom rows (above last status row) */
+        MIN(72, Term->wid - 13),
+        COMBAT_LOG_LINES
+    );
 }
 
 rect_t ui_shop_rect(void)
@@ -4569,7 +4580,9 @@ static int target_set_aux(int y, int x, int mode, cptr info)
 
         prt(out_val, 0, 0);
         move_cursor_relative(y, x);
-        query = inkey();
+        do {
+            query = inkey();
+        } while (query == TERM_MOUSE_MOVE_KEY);
 
         /* Always stop at "normal" keys */
         if ((query != '\r') && (query != '\n') && (query != ' ')) return query;
@@ -4624,7 +4637,67 @@ static int target_set_aux(int y, int x, int mode, cptr info)
  * This command will cancel any old target, even if used from
  * inside the "look" command.
  */
+static bool _target_handle_mouse(int mode, int *y, int *x, bool *flag, bool *done)
+{
+    mouse_event_t ev;
+    point_t cp;
+
+    if (!mouse_get_event(&ev)) return TRUE;
+    if (ev.button == TERM_MOUSE_BUTTON_RIGHT)
+    {
+        *done = TRUE;
+        return TRUE;
+    }
+    if (!ui_xy_is_visible(ev.x, ev.y)) return TRUE;
+
+    cp = ui_xy_to_cave_pt(ev.x, ev.y);
+    if (!in_bounds(cp.y, cp.x)) return TRUE;
+
+    if (mode & TARGET_LOOK)
+    {
+        if (cp.y == *y && cp.x == *x)
+        {
+            *done = TRUE;
+        }
+        else
+        {
+            *flag = FALSE;
+            *y = cp.y;
+            *x = cp.x;
+        }
+        return TRUE;
+    }
+
+    {
+        cave_type *mc = &cave[cp.y][cp.x];
+        if (target_able(mc->m_idx) ||
+            ((mode & (TARGET_MARK | TARGET_DISI | TARGET_XTRA)) && mc->m_idx && m_list[mc->m_idx].ml))
+        {
+            health_track(mc->m_idx);
+            target_who = mc->m_idx;
+            target_grab(cp.y, cp.x);
+            *done = TRUE;
+        }
+        else if (!(mode & TARGET_MARK))
+        {
+            target_who = -1;
+            target_grab(cp.y, cp.x);
+            *done = TRUE;
+        }
+        else
+        {
+            bell();
+        }
+    }
+    return TRUE;
+}
+
 bool target_set(int mode)
+{
+    return target_set_at(mode, py, px);
+}
+
+bool target_set_at(int mode, int init_y, int init_x)
 {
     int        i, d, m, t, bd;
     int        y = py;
@@ -4634,6 +4707,7 @@ bool target_set(int mode)
     bool       travel_tgt = FALSE;
     char       query;
     char       info[80];
+    mouse_context_t old_ctx = mouse_context;
 
     cave_type *c_ptr;
     rect_t     map_rect = ui_map_rect();
@@ -4642,16 +4716,32 @@ bool target_set(int mode)
     /* Cancel target */
     target_who = 0;
 
-
-    /* Cancel tracking */
-    /* health_track(0); */
-
+    mouse_context = MOUSE_CTX_TARGET;
 
     /* Prepare the "temp" array */
     target_set_prepare(mode);
 
-    /* Start near the player */
+    /* Start near the player, or at requested initial coordinates */
     m = 0;
+    if (in_bounds(init_y, init_x) && (init_y != py || init_x != px))
+    {
+        bool found_interesting = FALSE;
+        for (i = 0; i < temp_n; i++)
+        {
+            if (temp_y[i] == init_y && temp_x[i] == init_x)
+            {
+                m = i;
+                found_interesting = TRUE;
+                break;
+            }
+        }
+        if (!found_interesting)
+        {
+            flag = FALSE;
+            y = init_y;
+            x = init_x;
+        }
+    }
 
     /* Interact */
     while (!done)
@@ -4686,6 +4776,12 @@ bool target_set(int mode)
 
             /* Describe and Prompt */
             while (!(query = target_set_aux(y, x, mode, info)));
+
+            if (query == TERM_MOUSE_KEY)
+            {
+                _target_handle_mouse(mode, &y, &x, &flag, &done);
+                continue;
+            }
 
             /* Cancel tracking */
             /* health_track(0); */
@@ -4942,6 +5038,12 @@ bool target_set(int mode)
             /* Describe and Prompt (enable "TARGET_LOOK") */
             while (!(query = target_set_aux(y, x, mode | TARGET_LOOK, info)));
 
+            if (query == TERM_MOUSE_KEY)
+            {
+                _target_handle_mouse(mode, &y, &x, &flag, &done);
+                continue;
+            }
+
             /* Cancel tracking */
             /* health_track(0); */
 
@@ -5156,6 +5258,8 @@ bool target_set(int mode)
         travel_begin(TRAVEL_MODE_NORMAL, travel.x, travel.y);
     }
 
+    mouse_context = old_ctx;
+
     /* Failure to set target */
     if (!target_who) return (FALSE);
 
@@ -5221,6 +5325,52 @@ bool get_fire_dir_aux(int *dp, int target_mode)
     return get_aim_dir_aux(dp, target_mode);
 }
 
+static int _aim_dir_from_mouse(int target_mode)
+{
+    int dir = 0;
+    if (!in_bounds(mouse_map_y, mouse_map_x)) return 0;
+    if (mouse_map_y == py && mouse_map_x == px)
+    {
+        dir = 5;
+    }
+    else
+    {
+        cave_type *mc = &cave[mouse_map_y][mouse_map_x];
+        if (mc->m_idx && target_able_aux(mc->m_idx, target_mode))
+        {
+            health_track(mc->m_idx);
+            target_who = mc->m_idx;
+            target_grab(mouse_map_y, mouse_map_x);
+            dir = 5;
+        }
+        else if (!(target_mode & TARGET_MONS))
+        {
+            target_who = -1;
+            target_grab(mouse_map_y, mouse_map_x);
+            dir = 5;
+        }
+    }
+    if ((dir == 5) && !target_okay_aux(target_mode)) dir = 0;
+    return dir;
+}
+
+static int _rep_dir_from_mouse(bool under)
+{
+    int dy, dx, i;
+    int dir = 0;
+    if (!in_bounds(mouse_map_y, mouse_map_x)) return 0;
+    dy = mouse_map_y - py;
+    dx = mouse_map_x - px;
+    if (dy < -1) dy = -1; else if (dy > 1) dy = 1;
+    if (dx < -1) dx = -1; else if (dx > 1) dx = 1;
+    for (i = 1; i <= 9; i++)
+    {
+        if (ddy[i] == dy && ddx[i] == dx) { dir = i; break; }
+    }
+    if (dir == 5 && !under) dir = 0;
+    return dir;
+}
+
 bool get_aim_dir(int *dp) { return get_aim_dir_aux(dp, TARGET_KILL); }
 bool get_aim_dir_aux(int *dp, int target_mode)
 {
@@ -5275,6 +5425,13 @@ bool get_aim_dir_aux(int *dp, int target_mode)
 
         /* Get a command (or Cancel) */
         if (!get_com(p, &command, TRUE)) break;
+
+        if (command == TERM_MOUSE_KEY)
+        {
+            dir = _aim_dir_from_mouse(target_mode);
+            if (!dir) bell();
+            continue;
+        }
 
         if (use_menu)
         {
@@ -5416,6 +5573,12 @@ int get_rep_dir(int *dp, bool under)
         /* Get a command (or Cancel) */
         if (!get_com("Direction (Escape to cancel)? ", &ch, TRUE)) break;
 
+        if (ch == TERM_MOUSE_KEY)
+        {
+            dir = _rep_dir_from_mouse(under);
+            if (!dir) bell();
+            continue;
+        }
 
         /* Look up the direction */
         dir = get_keymap_dir(ch, under);
@@ -5541,6 +5704,12 @@ bool get_rep_dir2(int *dp)
         /* Get a command (or Cancel) */
         if (!get_com("Direction (Escape to cancel)? ", &ch, TRUE)) break;
 
+        if (ch == TERM_MOUSE_KEY)
+        {
+            dir = _rep_dir_from_mouse(FALSE);
+            if (!dir) bell();
+            continue;
+        }
 
         /* Look up the direction */
         dir = get_keymap_dir(ch, FALSE);
@@ -5674,6 +5843,7 @@ bool tgt_pt(int *x_ptr, int *y_ptr, int rng)
     int d, x, y, n = 0;
     bool success = FALSE;
     rect_t map_rect = ui_map_rect();
+    mouse_context_t old_ctx = mouse_context;
 
     x = px;
     y = py;
@@ -5684,14 +5854,46 @@ bool tgt_pt(int *x_ptr, int *y_ptr, int rng)
         n = 0;
     }
 
-    msg_print("Select a point and press <color:y>space</color>. < and > cycle through stairs, * cycles through monsters");
+    mouse_context = MOUSE_CTX_TARGET;
+    msg_print("Select a point and press <color:y>space</color> or click. < and > cycle stairs.");
 
     while ((ch != ESCAPE) && !success)
     {
         bool move_fast = FALSE;
 
         move_cursor_relative(y, x);
-        ch = inkey();
+        do {
+            ch = inkey();
+        } while (ch == TERM_MOUSE_MOVE_KEY);
+
+        if (ch == TERM_MOUSE_KEY)
+        {
+            mouse_event_t ev;
+            if (!mouse_get_event(&ev)) continue;
+            if (ev.button == TERM_MOUSE_BUTTON_RIGHT)
+            {
+                ch = ESCAPE;
+                break;
+            }
+            if (ui_xy_is_visible(ev.x, ev.y))
+            {
+                point_t cp = ui_xy_to_cave_pt(ev.x, ev.y);
+                if (in_bounds(cp.y, cp.x) && !player_bold(cp.y, cp.x))
+                {
+                    if (rng > 0 && distance(py, px, cp.y, cp.x) > rng)
+                    {
+                        bell();
+                        continue;
+                    }
+                    x = cp.x;
+                    y = cp.y;
+                    success = TRUE;
+                    break;
+                }
+            }
+            continue;
+        }
+
         switch (ch)
         {
         case ESCAPE:
@@ -5844,6 +6046,7 @@ bool tgt_pt(int *x_ptr, int *y_ptr, int rng)
     }
 
     msg_line_clear();
+    mouse_context = old_ctx;
 
     /* Recenter the map around the player */
     viewport_verify();
@@ -5898,6 +6101,13 @@ bool get_hack_dir(int *dp)
 
         /* Get a command (or Cancel) */
         if (!get_com(p, &command, TRUE)) break;
+
+        if (command == TERM_MOUSE_KEY)
+        {
+            dir = _aim_dir_from_mouse(TARGET_KILL);
+            if (!dir) bell();
+            continue;
+        }
 
         if (use_menu)
         {

@@ -340,6 +340,7 @@ void mon_take_hit_mon(int m_idx, int dam, bool *fear, cptr note, int who)
     monster_race    *r_ptr = &r_info[m_ptr->r_idx];
 
     char m_name[160];
+    char who_name[160];
 
     bool seen = mon_show_msg(m_ptr);
     /* Can the player be aware of this attack? */
@@ -347,6 +348,10 @@ void mon_take_hit_mon(int m_idx, int dam, bool *fear, cptr note, int who)
 
     /* Extract monster name */
     monster_desc(m_name, m_ptr, 0);
+    if (who > 0 && m_list[who].r_idx)
+        monster_desc(who_name, &m_list[who], 0);
+    else
+        strcpy(who_name, "Something");
 
     /* Redraw (later) if needed */
     if (m_ptr->ml)
@@ -387,6 +392,11 @@ void mon_take_hit_mon(int m_idx, int dam, bool *fear, cptr note, int who)
 
     /* Mark monster as hurt */
     if (dam > 0) m_ptr->mflag2 |= MFLAG2_HURT;
+
+    /* Show detailed monster-vs-monster damage.
+     * Always show pet damage; otherwise require normal awareness. */
+    if (dam > 0 && (known || ((who > 0) && is_pet(&m_list[who]))))
+        msg_format("%^s does %d damage to %s.", who_name, dam, m_name);
 
     /* Hurt it */
     m_ptr->hp -= dam;
@@ -1983,6 +1993,9 @@ bool mon_attack_mon(int m_idx, int t_idx)
                 }
                 if (pt)
                 {
+                    if (damage > 0 && (is_pet(m_ptr) || see_either))
+                        msg_format("%^s does %d damage to %s.", m_name, damage, t_name);
+
                     /* Do damage if not exploding */
                     if (!explode)
                         _mon_gf_mon(m_idx, t_ptr, pt, damage);

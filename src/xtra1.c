@@ -2298,9 +2298,6 @@ static void prt_mon_health_bar(int m_idx, int row, int col)
         int pct = 100 * m_ptr->hp / m_ptr->maxhp;
         /*int pct2 = 100L * m_ptr->hp / m_ptr->max_maxhp;*/
 
-        /* Convert percent into "health" */
-        int len = MIN(9, 1 + m_ptr->hp * 9 / m_ptr->max_maxhp);
-
         /* Default to almost dead */
         byte attr = TERM_RED;
         const monster_race *r_ptr = mon_apparent_race(m_ptr);
@@ -2349,6 +2346,8 @@ static void prt_mon_health_bar(int m_idx, int row, int col)
         }
         else
         {
+            char buf[16];
+
             if (MON_INVULNER(m_ptr)) attr = TERM_WHITE;
             else if (MON_PARALYZED(m_ptr)) attr = TERM_BLUE;
             else if (MON_CSLEEP(m_ptr)) attr = TERM_BLUE;
@@ -2356,22 +2355,10 @@ static void prt_mon_health_bar(int m_idx, int row, int col)
             else if (MON_STUNNED(m_ptr)) attr = TERM_L_BLUE;
             else if (MON_MONFEAR(m_ptr)) attr = TERM_VIOLET;
             else if (monster_slow(m_ptr)) attr = TERM_L_DARK;
-            Term_putstr(col+1, row, 11, base_attr, "[---------]");
 
-            if (m_ptr->ego_whip_ct)
-                Term_putstr(col + 2, row, len, attr, "wwwwwwwww");
-            else
-                Term_putstr(col + 2, row, len, attr, "*********");
-            if (m_ptr->mpower > 1333)
-            {
-                Term_putch(col + 1, row, TERM_BLUE, '[');
-                Term_putch(col + 11, row, TERM_BLUE, ']');
-            }
-            else if (MON_FAST(m_ptr))
-            {
-                Term_putch(col + 1, row, TERM_VIOLET, '[');
-                Term_putch(col + 11, row, TERM_VIOLET, ']');
-            }
+            /* Up to 11 character cells (after race glyph): numeric HP / max HP */
+            snprintf(buf, sizeof(buf), "%d/%d", (int)m_ptr->hp, (int)m_ptr->maxhp);
+            Term_putstr(col + 1, row, 11, attr, buf);
         }
     }
 }

@@ -285,6 +285,40 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (url.pathname === "/api/saves/delete" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString("utf8");
+      if (body.length > 4096) req.destroy();
+    });
+    req.on("end", () => {
+      try {
+        const parsed = JSON.parse(body || "{}");
+        const rawName = String(parsed.name || "").trim();
+        if (!rawName || rawName.includes("/") || rawName.includes("\\") || rawName.includes("..")) {
+          res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "Invalid save name" }));
+          return;
+        }
+        const target = path.resolve(SAVE_DIR, rawName);
+        if (!target.startsWith(SAVE_DIR + path.sep)) {
+          res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "Forbidden" }));
+          return;
+        }
+        if (fs.existsSync(target) && fs.statSync(target).isFile()) {
+          fs.unlinkSync(target);
+        }
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ ok: true, saves: listSaves() }));
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid request" }));
+      }
+    });
+    return;
+  }
+
   if (url.pathname.startsWith("/help/")) {
     const rel = decodeURIComponent(url.pathname.slice("/help/".length));
     const target = path.resolve(HELP_HTML_DIR, rel);

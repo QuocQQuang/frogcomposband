@@ -3507,10 +3507,94 @@ extern void do_cmd_debug(void);
  *
  * XXX XXX XXX Make some "blocks"
  */
+static int _mouse_coords_to_dir(int y, int x)
+{
+    int i;
+    int dy = y - py;
+    int dx = x - px;
+
+    if (dy < -1) dy = -1;
+    if (dy > 1) dy = 1;
+    if (dx < -1) dx = -1;
+    if (dx > 1) dx = 1;
+
+    for (i = 1; i <= 9; i++)
+    {
+        if (ddy[i] == dy && ddx[i] == dx)
+            return i;
+    }
+    return 0;
+}
+
 static void _dispatch_command(int old_now_turn)
 {
     switch (command_cmd)
     {
+        case TERM_MOUSE_KEY:
+        {
+            mouse_event_t ev;
+            point_t cp;
+            int dir = 0;
+
+            if (!mouse_get_event(&ev)) break;
+            if (!ui_xy_is_visible(ev.x, ev.y)) break;
+
+            cp = ui_xy_to_cave_pt(ev.x, ev.y);
+            mouse_map_x = cp.x;
+            mouse_map_y = cp.y;
+            if (!in_bounds(mouse_map_y, mouse_map_x)) break;
+
+            dir = _mouse_coords_to_dir(mouse_map_y, mouse_map_x);
+
+            if ((ev.mods & TERM_MOUSE_MOD_CTRL) || ev.button == TERM_MOUSE_BUTTON_MIDDLE)
+            {
+                int m_idx = cave[mouse_map_y][mouse_map_x].m_idx;
+                if (m_idx > 0 && target_able(m_idx))
+                {
+                    char m_name[MAX_NLEN];
+                    health_track(m_idx);
+                    target_who = m_idx;
+                    target_grab(mouse_map_y, mouse_map_x);
+                    monster_desc(m_name, &m_list[m_idx], 0);
+                    msg_format("Target locked: <color:y>%s</color>.", m_name);
+                    p_ptr->redraw |= (PR_HEALTH_BARS);
+                }
+                else if (!(mouse_map_y == py && mouse_map_x == px) &&
+                         (cave[mouse_map_y][mouse_map_x].info & (CAVE_MARK | CAVE_VIEW)))
+                {
+                    target_who = -1;
+                    target_grab(mouse_map_y, mouse_map_x);
+                    msg_print("Target grid locked.");
+                    p_ptr->redraw |= (PR_HEALTH_BARS);
+                }
+                else
+                {
+                    target_set_at(TARGET_KILL, mouse_map_y, mouse_map_x);
+                }
+            }
+            else if (ev.button == TERM_MOUSE_BUTTON_RIGHT)
+            {
+                target_set_at(TARGET_LOOK, mouse_map_y, mouse_map_x);
+            }
+            else if (mouse_map_y == py && mouse_map_x == px)
+            {
+                if (ev.mods & TERM_MOUSE_MOD_SHIFT)
+                    do_cmd_rest();
+                else
+                    do_cmd_stay(always_pickup);
+            }
+            else if ((ABS(mouse_map_y - py) <= 1) && (ABS(mouse_map_x - px) <= 1) && dir)
+            {
+                command_dir = dir;
+                do_cmd_walk(always_pickup);
+            }
+            else if (mouse_movement)
+            {
+                travel_begin(TRAVEL_MODE_NORMAL, mouse_map_x, mouse_map_y);
+            }
+            break;
+        }
+
         /* Ignore */
         case ' ':
         case '\r':
@@ -3617,6 +3701,13 @@ static void _dispatch_command(int old_now_turn)
             ring_finger_swap_ui(0, 0);
             break;
         }
+
+        case 'N':
+        {
+            do_cmd_toggle_1h();
+            break;
+        }
+
 
 
         /*** Various commands ***/
@@ -4197,6 +4288,12 @@ static void _dispatch_command(int old_now_turn)
         case 'M':
         {
             do_cmd_view_map();
+            break;
+        }
+
+        case 'P':
+        {
+            do_cmd_wanted_uniques();
             break;
         }
 
@@ -6073,9 +6170,8 @@ void play_game(bool new_game)
         }
     }
 
-    /* The Windows port blocks until the user chooses a menu for a New game, or
-       to load an existing game. Thus, it will display its own start screen ... */
-    if (strcmp(ANGBAND_SYS, "win") != 0)
+    /* The Windows & Web ports have their own title/lobby UI before starting. */
+    if (strcmp(ANGBAND_SYS, "win") != 0 && strcmp(ANGBAND_SYS, "web") != 0)
     {
         /* On X11, you need to flush() before Term->hgt is accurate! */
         Term_flush();
@@ -6093,6 +6189,14 @@ void play_game(bool new_game)
 
     /* Extract the options */
     if (!character_loaded) extract_option_vars();
+
+    if (streq(ANGBAND_SYS, "web"))
+    {
+        use_mouse = TRUE;
+        mouse_movement = TRUE;
+        mouse_tooltips = TRUE;
+        mouse_hover_highlight = TRUE;
+    }
 
     creating_savefile = new_game;
 

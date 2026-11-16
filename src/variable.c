@@ -146,6 +146,14 @@ bool inkey_xtra;        /* See the "inkey()" function */
 bool inkey_scan;        /* See the "inkey()" function */
 bool inkey_flag;        /* See the "inkey()" function */
 bool get_com_no_macros = FALSE;    /* Expand macros in "get_com" or not */
+bool use_mouse = TRUE;
+bool mouse_movement = TRUE;
+bool mouse_tooltips = TRUE;
+bool mouse_hover_highlight = TRUE;
+mouse_context_t mouse_context = MOUSE_CTX_NONE;
+mouse_event_t mouse_last_event;
+int mouse_map_y = 0;
+int mouse_map_x = 0;
 
 s16b coin_type;            /* Hack -- force coin type */
 

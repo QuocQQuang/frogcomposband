@@ -3,7 +3,7 @@
 
 #include "inv.h"
 
-#define PACK_MAX 26
+#define PACK_MAX 40
 
 extern void    pack_init(void);
 

@@ -31,6 +31,7 @@
  */
 
 typedef struct term_win term_win;
+typedef struct mouse_event mouse_event_t;
 
 struct term_win
 {
@@ -49,6 +50,36 @@ struct term_win
     byte *vta;
     char *vtc;
 };
+
+struct mouse_event
+{
+    byte x;
+    byte y;
+    byte button;
+    byte mods;
+};
+
+typedef enum
+{
+    MOUSE_CTX_NONE = 0,
+    MOUSE_CTX_MAP,
+    MOUSE_CTX_TARGET,
+    MOUSE_CTX_MENU,
+    MOUSE_CTX_SHOP,
+    MOUSE_CTX_INVENTORY,
+    MOUSE_CTX_BIRTH,
+    MOUSE_CTX_PROMPT
+} mouse_context_t;
+
+#define TERM_MOUSE_BUTTON_LEFT   1
+#define TERM_MOUSE_BUTTON_RIGHT  2
+#define TERM_MOUSE_BUTTON_MIDDLE 3
+#define TERM_MOUSE_KEY           0x1c  /* sentinel: button click queued */
+#define TERM_MOUSE_MOVE_KEY      0x1e  /* sentinel: hover/motion queued */
+
+#define TERM_MOUSE_MOD_SHIFT 0x01
+#define TERM_MOUSE_MOD_CTRL  0x02
+#define TERM_MOUSE_MOD_ALT   0x04
 
 
 
@@ -181,11 +212,15 @@ struct term
     char char_blank;
 
     char *key_queue;
+    mouse_event_t *mouse_queue;
 
     u16b key_head;
     u16b key_tail;
     u16b key_xtra;
     u16b key_size;
+    u16b mouse_head;
+    u16b mouse_tail;
+    u16b mouse_size;
 
     byte wid;
     byte hgt;
@@ -304,6 +339,10 @@ extern errr Term_flush(void);
 extern errr Term_keypress(int k);
 extern errr Term_key_push(int k);
 extern errr Term_inkey(char *ch, bool wait, bool take);
+extern errr Term_mousepress_aux(int x, int y, int button, int mods);
+extern errr Term_mousepress(int x, int y, int button);
+extern errr Term_mousemove_aux(int x, int y);
+extern errr Term_getmouse(mouse_event_t *event, bool wait, bool take);
 
 extern errr Term_save(void);
 extern errr Term_load(void);

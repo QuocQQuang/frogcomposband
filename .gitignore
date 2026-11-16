@@ -259,3 +259,10 @@ autom4te.cache/
 config.log
 config.status
 mk/buildsys.mk
+
+# Local Windows runtime & junction paths
+/src/lib
+/path-backups/
+/lib/PLAYER
+/lib/user/screen.doc
+/lib/user/screen.html

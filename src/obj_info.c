@@ -1545,6 +1545,10 @@ void obj_display_smith(object_type *o_ptr, doc_ptr doc)
     obj_flags_display(o_ptr, flgs);
 
     _display_name(o_ptr, doc);
+    if (object_is_shoukinkubi(o_ptr))
+    {
+        doc_insert(doc, "  <indent><color:v>This is a wanted bounty!</color></indent>\n");
+    }
     doc_insert(doc, "  <indent><style:indent>");
 
     if (!object_is_known(o_ptr) && (o_ptr->ident & IDENT_SENSE))

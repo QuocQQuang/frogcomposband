@@ -254,7 +254,7 @@ void pack_describe(obj_ptr obj)
 
     assert(obj);
     assert(obj->loc.where == INV_PACK);
-    assert(1 <= obj->loc.slot && obj->loc.slot <= 26);
+    assert(1 <= obj->loc.slot && obj->loc.slot <= inv_max(_inv));
 
     object_desc(name, obj, OD_COLOR_CODED);
     msg_format("You have %s (%c).", name, slot_label(obj->loc.slot));

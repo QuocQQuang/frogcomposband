@@ -518,11 +518,11 @@ static void _set_mode(int mode)
     {
         if (first || game_mode != mode)
         {
-            p_ptr->prace = RACE_HOBBIT;
-            p_ptr->psubrace = 0;
-            p_ptr->pclass = CLASS_ROGUE;
+            p_ptr->prace = RACE_DEMIGOD;
+            p_ptr->psubrace = DEMIGOD_MINOR;
+            p_ptr->pclass = CLASS_WARRIOR;
             p_ptr->psubclass = 0;
-            p_ptr->realm1 = REALM_BURGLARY;
+            p_ptr->realm1 = REALM_NONE;
             p_ptr->realm2 = REALM_NONE;
             p_ptr->dragon_realm = DRAGON_REALM_NONE;
             p_ptr->personality = PERS_ORDINARY;
@@ -534,11 +534,11 @@ static void _set_mode(int mode)
     {
         if (first || game_mode == GAME_MODE_MONSTER)
         {
-            p_ptr->prace = RACE_HOBBIT;
-            p_ptr->psubrace = 0;
-            p_ptr->pclass = CLASS_ROGUE;
+            p_ptr->prace = RACE_DEMIGOD;
+            p_ptr->psubrace = DEMIGOD_MINOR;
+            p_ptr->pclass = CLASS_WARRIOR;
             p_ptr->psubclass = 0;
-            p_ptr->realm1 = REALM_BURGLARY;
+            p_ptr->realm1 = REALM_NONE;
             p_ptr->realm2 = REALM_NONE;
             p_ptr->dragon_realm = DRAGON_REALM_NONE;
             p_ptr->personality = PERS_ORDINARY;
@@ -580,8 +580,8 @@ static void _set_mode(int mode)
  *
  * Note: It assumed througout that the player starts with a valid
  * race, class and personality, and that throughout the birth process
- * these fields remain legal. Currently, player_wipe gives an Ordinary
- * Human Warrior to start.
+ * these fields remain legal. _set_mode() seeds normal/beginner games
+ * with Demigod (minor) Warrior; monster mode uses its own defaults.
  ***********************************************************************/ 
 static void _race_class_top(doc_ptr doc);
 static void _inc_rcp_state(void);
@@ -3147,9 +3147,144 @@ static void _change_name(void)
     }
 }
 
+/* Row currently hovered by mouse (-1 = none).  Used by _sync_term. */
+static int _hover_y = -1;
+
+static void _mouse_dbg_birth(cptr tag, int cmd, int x, int y, int key)
+{
+#ifdef MOUSE_DEBUG
+    FILE *fp;
+    fp = fopen("C:\\Users\\Lecoo\\Desktop\\Git\\frogcomposband\\debug-527ed0.log", "a");
+    if (!fp) return;
+    fprintf(fp,
+        "{\"sessionId\":\"527ed0\",\"runId\":\"run1\",\"hypothesisId\":\"H5\","
+        "\"location\":\"py_birth.c\",\"message\":\"%s\","
+        "\"data\":{\"cmd\":%d,\"x\":%d,\"y\":%d,\"key\":%d},\"timestamp\":%lu}\n",
+        tag, cmd, x, y, key, (unsigned long)clock());
+    fclose(fp);
+#else
+    (void)tag; (void)cmd; (void)x; (void)y; (void)key;
+#endif
+}
+
+/*
+ * Highlight the key glyph(s) on the hovered row so the user can see what
+ * will be activated by a click.  Called after doc_sync_term().
+ */
+static void _apply_hover_highlight(void)
+{
+    int x, wid, hgt;
+    if (!mouse_hover_highlight || _hover_y < 0) return;
+    wid = Term->wid;
+    hgt = Term->hgt;
+    if (_hover_y >= hgt) return;
+
+    for (x = 0; x < wid - 1; x++)
+    {
+        byte a;
+        char c;
+        int end = x;
+        int start;
+        int has_token = 0;
+
+        Term_what(end, _hover_y, &a, &c);
+        if (c != ')') continue;
+
+        start = end - 1;
+        while (start >= 0)
+        {
+            Term_what(start, _hover_y, &a, &c);
+            if (!(isalpha((unsigned char)c) || isdigit((unsigned char)c)
+               || c == '*' || c == '=' || c == '?'
+               || c == '!' || c == '<' || c == '>'
+               || c == ';' || c == '@' || c == '#'))
+                break;
+            start--;
+        }
+        start++;
+        if (start >= end) continue;
+        has_token = 1;
+
+        if (has_token)
+        {
+            int lx;
+            for (lx = start; lx <= end; lx++)
+            {
+                Term_what(lx, _hover_y, &a, &c);
+                Term_putch(lx, _hover_y, TERM_YELLOW, c);
+            }
+            for (lx = end + 1; lx < wid; lx++)
+            {
+                Term_what(lx, _hover_y, &a, &c);
+                if (c == '\0') break;
+                if (c == ' ') continue;
+                Term_putch(lx, _hover_y, TERM_YELLOW, c);
+            }
+            break;
+        }
+    }
+}
+
 static int _inkey(void)
 {
-    return inkey_special(TRUE);
+    mouse_context_t old_context = mouse_context;
+    int cmd;
+
+    for (;;)
+    {
+        /* 
+         * Read queued mouse events directly first.
+         * This avoids losing mouse clicks to key/macro control-char filters
+         * in the generic inkey() path.
+         */
+        {
+            mouse_event_t event;
+            if (mouse_get_event(&event))
+            {
+                if (event.button == 0)
+                {
+                    if (event.y != (byte)_hover_y)
+                    {
+                        _mouse_dbg_birth("MOVE_DIRECT", 0, event.x, event.y, 0);
+                        _hover_y = event.y;
+                        if (_doc) _sync_term(_doc);
+                        Term_fresh();
+                    }
+                    continue;
+                }
+
+                _mouse_dbg_birth("CLICK_DIRECT_RAW", 0, event.x, event.y, 0);
+                if (event.button == TERM_MOUSE_BUTTON_RIGHT) return ESCAPE;
+                {
+                    int choice = mouse_find_choice(&event);
+                    _mouse_dbg_birth("CLICK_DIRECT_MAPPED", 0, event.x, event.y, choice);
+                    if (choice) return choice;
+                }
+                if (msg_line_contains(event.y, event.x)) return ' ';
+                continue;
+            }
+        }
+
+        mouse_context = MOUSE_CTX_BIRTH;
+        cmd = inkey_special(TRUE);
+        mouse_context = old_context;
+
+        if (cmd == TERM_MOUSE_MOVE_KEY)
+        {
+            /* Mouse events are already consumed in the direct queue path above.
+             * Ignore sentinel path to avoid mismatched key->mouse pairing. */
+            continue;
+        }
+
+        if (cmd == TERM_MOUSE_KEY)
+        {
+            /* Mouse events are already consumed in the direct queue path above.
+             * Ignore sentinel path to avoid consuming hover as click. */
+            continue;
+        }
+
+        return cmd;
+    }
 }
 
 static void _sync_term(doc_ptr doc)
@@ -3157,6 +3292,7 @@ static void _sync_term(doc_ptr doc)
     rect_t r = ui_screen_rect();
     Term_load();
     doc_sync_term(doc, doc_range_top_lines(doc, r.cy), doc_pos_create(r.x, r.y));
+    _apply_hover_highlight();
 }
 
 static int _count(int ids[])

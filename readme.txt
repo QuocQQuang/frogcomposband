@@ -118,6 +118,58 @@
     -misc-liberation sans-medium-i-normal--0-0-0-0-p-0-iso8859-1
     -misc-liberation sans-medium-i-normal--0-0-0-0-p-0-iso8859-10
     -misc-liberation sans-medium-i-normal--0-0-0-0-p-0-iso8859-13
+
+----- Mouse Support -----
+
+  FrogComposband supports mouse-driven play across all major game screens.
+  You can configure it from the '=' options menu under the input page:
+
+    use_mouse           - Master toggle for all mouse input (default: on).
+    mouse_movement      - Left-click on the map travels / walks to that tile.
+    mouse_hover_highlight - Show visual feedback (highlighted tile/option) on hover.
+
+  Note: mouse_tooltips is listed in the options page but not yet implemented.
+
+  What you can do with the mouse:
+
+  NEW GAME / CHARACTER CREATION
+    * Click any visible option row to select it (works even when the
+      key glyph is not directly under the cursor).
+    * Moving the mouse over an option row highlights it in yellow.
+    * Right-click cancels the current screen and returns to the previous one.
+    * Clicking on a blank area does nothing (does not accidentally cancel).
+
+  MAIN MAP
+    * Left-click a tile to walk/attack (adjacent) or travel (distant).
+    * Right-click the map to look at a location.
+    * Ctrl+left-click to open the targeting cursor on that tile.
+    * Hovering shows a cursor on the tile under the mouse.
+
+  MENUS AND LISTS
+    * Click any row listing a choice (e.g. race, class, realm, personality)
+      to select it. Clicking anywhere on the row label works, not just the key.
+    * Non-alpha option keys (=, ?, !) are now also clickable.
+    * Right-click cancels / goes back.
+
+  INVENTORY / OBJECT SELECTION
+    * Left-click an item row to select it.
+    * Right-click an item to inspect it.
+
+  SHOP
+    * Left-click an item to buy it.
+    * Right-click to examine.
+
+  TARGETING
+    * Click a visible monster or tile to set as target.
+    * Right-click to cancel targeting.
+
+  PROMPTS (y/n, confirm)
+    * Left-click = yes / accept.
+    * Right-click = no / cancel.
+
+  Backend: Windows, SDL and ncurses/GCU all forward mouse events.
+  Hover highlight (motion feedback) is currently implemented on Windows;
+  SDL and GCU receive click events but do not yet generate motion events.
     -misc-liberation sans-medium-i-normal--0-0-0-0-p-0-iso8859-15
     -misc-liberation sans-medium-i-normal--0-0-0-0-p-0-iso8859-16
     ... [and many more]
@@ -176,6 +228,12 @@
 
   Download the binary archive for Windows.  Unzip it to any location that you 
   will have full permissions and launch frogcomposband to play.
+
+  Quick local build on Windows with MSYS2 (from repo root, in PowerShell or cmd):
+  > .\build-msys2.cmd
+  This wrapper checks for MSYS2, gcc and make, then builds with sane PATH defaults.
+  You can pass custom make args, e.g.:
+  > .\build-msys2.cmd -j8
 
   To compile the source code in MinGW:
   $ ./autogen.sh

@@ -120,6 +120,7 @@ static int _choose(menu_ptr menu)
     }
     
     _list(menu, keys);
+    mouse_context = MOUSE_CTX_MENU;
 
     for (;;)
     {
@@ -127,6 +128,10 @@ static int _choose(menu_ptr menu)
         int i;
 
         choice = -1;
+        /* get_com() handles TERM_MOUSE_KEY internally:
+         *   - matched click  -> ch = key char
+         *   - right-click    -> returns FALSE (breaks loop)
+         *   - unmatched click -> ch = 0 (falls through to bell below) */
         if (!get_com(describe ? browse_prompt : choose_prompt, &ch, FALSE)) break;
 
         if (ch == '?' && allow_browse)
@@ -166,6 +171,7 @@ static int _choose(menu_ptr menu)
 
         break;
     }
+    mouse_context = MOUSE_CTX_NONE;
     return choice;
 }
 

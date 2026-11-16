@@ -1477,6 +1477,7 @@ static void _loop(_ui_context_ptr context)
 
     Term_clear();
     context->doc = doc_alloc(MIN(80, ui_shop_rect().cx));
+    mouse_context = MOUSE_CTX_SHOP;
     for (;;)
     {
         int    max = inv_last(context->shop->inv, obj_exists);
@@ -1490,6 +1491,35 @@ static void _loop(_ui_context_ptr context)
         _display(context);
 
         cmd = inkey_special(TRUE);
+        if (cmd == TERM_MOUSE_KEY)
+        {
+            mouse_event_t event;
+            int choice = 0;
+            if (!mouse_get_event(&event))
+                continue;
+            if (event.button == TERM_MOUSE_BUTTON_RIGHT)
+            {
+                choice = mouse_find_choice(&event);
+                if (choice)
+                {
+                    Term_key_push(choice);
+                    cmd = 'x';
+                }
+                else
+                    cmd = ESCAPE;
+            }
+            else
+            {
+                choice = mouse_find_choice(&event);
+                if (choice)
+                {
+                    Term_key_push(choice);
+                    cmd = 'g';
+                }
+                else
+                    continue;
+            }
+        }
         msg_line_clear();
         msg_boundary(); /* turn_count is unchanging while in home/museum */
         if (cmd == ESCAPE || cmd == 'q' || cmd == 'Q') break;
@@ -1574,6 +1604,7 @@ static void _loop(_ui_context_ptr context)
             break;
         }
     }
+    mouse_context = MOUSE_CTX_NONE;
     character_icky = FALSE;
     energy_use = 100;
     msg_line_clear();
@@ -1792,6 +1823,16 @@ static void _examine(_ui_context_ptr context)
         obj_ptr obj;
 
         if (!msg_command("<color:y>Examine which item <color:w>(<color:keypress>Esc</color> when done)</color>?</color>", &cmd)) break;
+        if (cmd == TERM_MOUSE_KEY)
+        {
+            mouse_event_t event;
+            int choice = 0;
+            if (!mouse_get_event(&event)) continue;
+            if (event.button == TERM_MOUSE_BUTTON_RIGHT) break;
+            choice = mouse_find_choice(&event);
+            if (!choice) continue;
+            cmd = (char)choice;
+        }
         if (cmd < 'a' || cmd > 'z') continue;
         slot = label_slot(cmd);
         slot = slot + context->top - 1;
@@ -1871,6 +1912,16 @@ static void _reserve(_ui_context_ptr context)
         obj_ptr obj;
 
         if (!msg_command("<color:y>Reserve which item <color:w>(<color:keypress>Esc</color> when done)</color>?</color>", &cmd)) break;
+        if (cmd == TERM_MOUSE_KEY)
+        {
+            mouse_event_t event;
+            int choice = 0;
+            if (!mouse_get_event(&event)) continue;
+            if (event.button == TERM_MOUSE_BUTTON_RIGHT) break;
+            choice = mouse_find_choice(&event);
+            if (!choice) continue;
+            cmd = (char)choice;
+        }
         if (cmd < 'a' || cmd > 'z') continue;
         slot = label_slot(cmd);
         slot = slot + context->top - 1;
@@ -1965,6 +2016,16 @@ static void _sell(_ui_context_ptr context)
 
         if (!msg_command("<color:y>Buy which item <color:w>(<color:keypress>Esc</color> "
                          "to cancel)</color>?</color>", &cmd)) break;
+        if (cmd == TERM_MOUSE_KEY)
+        {
+            mouse_event_t event;
+            int choice = 0;
+            if (!mouse_get_event(&event)) continue;
+            if (event.button == TERM_MOUSE_BUTTON_RIGHT) break;
+            choice = mouse_find_choice(&event);
+            if (!choice) continue;
+            cmd = (char)choice;
+        }
         if (cmd < 'a' || cmd > 'z') continue;
         slot = label_slot(cmd);
         slot = slot + context->top - 1;

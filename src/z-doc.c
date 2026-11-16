@@ -1648,6 +1648,7 @@ int doc_display_aux(doc_ptr doc, cptr caption, int top, rect_t display)
     while (!done)
     {
         int cmd;
+        mouse_context_t old_ctx = mouse_context;
 
         Term_erase(display.x, display.y, display.cx);
         c_put_str(TERM_L_GREEN, format("[%s, Line %d/%d]", caption, top, doc->cursor.y), display.y, display.x);
@@ -1655,7 +1656,24 @@ int doc_display_aux(doc_ptr doc, cptr caption, int top, rect_t display)
         Term_erase(display.x, display.y + display.cy - 1, display.cx);
         c_put_str(TERM_L_GREEN, "[Press ESC to exit. Press ? for help]", display.y + display.cy - 1, display.x);
 
+        mouse_context = MOUSE_CTX_MENU;
         cmd = inkey_special(TRUE);
+        mouse_context = old_ctx;
+
+        if (cmd == TERM_MOUSE_MOVE_KEY) continue;
+        if (cmd == TERM_MOUSE_KEY)
+        {
+            mouse_event_t ev;
+            if (!mouse_get_event(&ev)) continue;
+            if (ev.button == TERM_MOUSE_BUTTON_RIGHT)
+                cmd = ESCAPE;
+            else
+            {
+                int choice = mouse_find_choice(&ev);
+                if (!choice) continue;
+                cmd = choice;
+            }
+        }
 
         /* links */
         if ('a' <= cmd && cmd <= 'z')
@@ -1931,6 +1949,7 @@ int weapon_exp_display(doc_ptr doc, cptr caption, int *top)
     while (!done)
     {
         int cmd;
+        mouse_context_t old_ctx = mouse_context;
 
         Term_erase(display.x, display.y, display.cx);
         c_put_str(TERM_L_GREEN, format("[%s, Line %d/%d]", caption, *top, doc->cursor.y), display.y, display.x);
@@ -1938,7 +1957,20 @@ int weapon_exp_display(doc_ptr doc, cptr caption, int *top)
         Term_erase(display.x, display.y + display.cy - 1, display.cx);
         c_put_str(TERM_L_GREEN, "[Press ESC to exit. Press M to toggle mode. Press ? for help]", display.y + display.cy - 1, display.x);
 
+        mouse_context = MOUSE_CTX_MENU;
         cmd = inkey_special(TRUE);
+        mouse_context = old_ctx;
+
+        if (cmd == TERM_MOUSE_MOVE_KEY) continue;
+        if (cmd == TERM_MOUSE_KEY)
+        {
+            mouse_event_t ev;
+            if (!mouse_get_event(&ev)) continue;
+            if (ev.button == TERM_MOUSE_BUTTON_RIGHT)
+                cmd = ESCAPE;
+            else
+                continue;
+        }
 
         /* vi like movement for roguelike keyset */
         if (rogue_like_commands)

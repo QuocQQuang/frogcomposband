@@ -1174,6 +1174,7 @@ struct player_type
     int  painted_target_ct;
     bool easy_2weapon;
     bool speciality_equip;
+    bool force_1h;
     bool sneak_attack;
     bool enhanced_crit;
     bool cleave;

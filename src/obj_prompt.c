@@ -133,6 +133,8 @@ int obj_prompt(obj_prompt_ptr prompt)
 
     context.doc = doc_alloc(MIN(80, ui_map_rect().cx));
     Term_save();
+    Term_clear();
+    mouse_context = MOUSE_CTX_INVENTORY;
     for (;;)
     {
         obj_prompt_tab_ptr tab = vec_get(context.tabs, context.tab);
@@ -141,7 +143,28 @@ int obj_prompt(obj_prompt_ptr prompt)
 
         _display(&context);
 
-        cmd = inkey_special(TRUE);        
+        cmd = inkey_special(TRUE);
+        if (cmd == TERM_MOUSE_KEY)
+        {
+            mouse_event_t event;
+            int choice = 0;
+            if (!mouse_get_event(&event))
+                continue;
+            if (event.button == TERM_MOUSE_BUTTON_RIGHT)
+            {
+                choice = mouse_find_choice(&event);
+                if (choice)
+                    cmd = toupper(choice);
+                else
+                    cmd = ESCAPE;
+            }
+            else
+            {
+                choice = mouse_find_choice(&event);
+                if (!choice) continue;
+                cmd = choice;
+            }
+        }
         if (prompt->cmd_handler)
         {
             tmp = prompt->cmd_handler(&context, cmd);
@@ -197,6 +220,11 @@ int obj_prompt(obj_prompt_ptr prompt)
                 else obj_display_doc(obj, context.doc);
                 _sync_doc(context.doc);
                 cmd = inkey();
+                if (cmd == TERM_MOUSE_KEY)
+                {
+                    mouse_event_t ev;
+                    mouse_get_event(&ev);
+                }
                 continue;
             }
         }
@@ -217,6 +245,7 @@ int obj_prompt(obj_prompt_ptr prompt)
         }
     }
     Term_load();
+    mouse_context = MOUSE_CTX_NONE;
     _context_unmake(&context);
     return result;
 }
@@ -314,6 +343,8 @@ static void _context_unmake(obj_prompt_context_ptr context)
 static void _sync_doc(doc_ptr doc)
 {
     Term_load();
+    if (strcmp(ANGBAND_SYS, "web") == 0)
+        Term_clear();
     doc_sync_menu(doc);
 }
 

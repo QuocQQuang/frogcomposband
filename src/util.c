@@ -3008,53 +3008,82 @@ bool get_check_strict(cptr prompt, int mode)
     }
 
     /* Get an acceptable answer */
-    while (TRUE)
     {
-        i = inkey();
-
-        if (!(mode & CHECK_NO_ESCAPE))
+        mouse_context_t old_ctx = mouse_context;
+        mouse_context = MOUSE_CTX_PROMPT;
+        while (TRUE)
         {
-            if (i == ESCAPE)
+            i = inkey();
+
+            if (i == TERM_MOUSE_MOVE_KEY) continue;
+            if (i == TERM_MOUSE_KEY)
             {
-                flag = FALSE;
-                break;
+                mouse_event_t ev;
+                if (!mouse_get_event(&ev)) continue;
+                if (ev.button == TERM_MOUSE_BUTTON_RIGHT)
+                {
+                    if (!(mode & CHECK_NO_ESCAPE))
+                    {
+                        flag = FALSE;
+                        break;
+                    }
+                    continue;
+                }
+                else
+                {
+                    int choice = mouse_find_choice(&ev);
+                    if (choice)
+                        i = choice;
+                    else
+                        continue;
+                }
             }
-        }
 
-        if (mode & CHECK_OKAY_CANCEL)
-        {
-            if (i == 'o' || i == 'O')
+            if (!(mode & CHECK_NO_ESCAPE))
+            {
+                if (i == ESCAPE)
+                {
+                    flag = FALSE;
+                    break;
+                }
+            }
+
+            if (mode & CHECK_OKAY_CANCEL)
+            {
+                if (i == 'o' || i == 'O')
+                {
+                    flag = TRUE;
+                    break;
+                }
+                else if (i == 'c' || i == 'C')
+                {
+                    flag = FALSE;
+                    break;
+                }
+            }
+            else
+            {
+                if (i == 'y' || i == 'Y')
+                {
+                    flag = TRUE;
+                    break;
+                }
+                else if (i == 'n' || i == 'N')
+                {
+                    flag = FALSE;
+                    break;
+                }
+            }
+
+            if (mode & CHECK_DEFAULT_Y)
             {
                 flag = TRUE;
                 break;
             }
-            else if (i == 'c' || i == 'C')
-            {
-                flag = FALSE;
-                break;
-            }
-        }
-        else
-        {
-            if (i == 'y' || i == 'Y')
-            {
-                flag = TRUE;
-                break;
-            }
-            else if (i == 'n' || i == 'N')
-            {
-                flag = FALSE;
-                break;
-            }
-        }
 
-        if (mode & CHECK_DEFAULT_Y)
-        {
-            flag = TRUE;
-            break;
+            bell();
         }
-
-        bell();
+        mouse_context = old_ctx;
     }
 
     /* Erase the prompt */
@@ -3074,21 +3103,72 @@ bool get_check_strict(cptr prompt, int mode)
  */
 bool get_com(cptr prompt, char *command, bool z_escape)
 {
-    /* Paranoia XXX XXX XXX */
+    mouse_context_t old_ctx = mouse_context;
 
-    /* Wednesday 2016-07-27 20:14:30 lumiera: removing this to avoid annoying -more- prompt in capture ball activation
-    msg_print(NULL);
-    */
     msg_line_clear();
 
     /* Display a prompt */
     prt(prompt, 0, 0);
 
-    /* Get a key */
-    if (get_com_no_macros)
-        *command = inkey_special(FALSE);
-    else
-        *command = inkey();
+    if (mouse_context == MOUSE_CTX_NONE)
+        mouse_context = MOUSE_CTX_PROMPT;
+
+    for (;;)
+    {
+        /* Get a key */
+        if (get_com_no_macros)
+            *command = inkey_special(FALSE);
+        else
+            *command = inkey();
+
+        if (*command == TERM_MOUSE_MOVE_KEY)
+            continue;
+
+        if (*command == TERM_MOUSE_KEY)
+        {
+            mouse_event_t ev;
+            if (!mouse_get_event(&ev)) continue;
+
+            if (ev.button == TERM_MOUSE_BUTTON_RIGHT)
+            {
+                *command = ESCAPE;
+                break;
+            }
+
+            if (mouse_context == MOUSE_CTX_MENU || mouse_context == MOUSE_CTX_SHOP || mouse_context == MOUSE_CTX_INVENTORY)
+            {
+                int choice = mouse_find_choice(&ev);
+                if (choice)
+                    *command = (char)choice;
+                else if (mouse_context == MOUSE_CTX_MENU)
+                    *command = 0;
+                else
+                    continue;
+                break;
+            }
+
+            if (character_dungeon && !character_icky && ui_xy_is_visible(ev.x, ev.y))
+            {
+                point_t cp = ui_xy_to_cave_pt(ev.x, ev.y);
+                mouse_map_x = cp.x;
+                mouse_map_y = cp.y;
+                break;
+            }
+            else
+            {
+                int choice = mouse_find_choice(&ev);
+                if (choice)
+                {
+                    *command = (char)choice;
+                    break;
+                }
+            }
+            continue;
+        }
+        break;
+    }
+
+    mouse_context = old_ctx;
 
     /* Clear the prompt */
     prt("", 0, 0);
@@ -3343,6 +3423,40 @@ int mouse_find_choice(mouse_event_t *event)
         }
     }
 
+    /* Fallback: match "key - " or "[key]" patterns if no "key)" matched */
+    if (!best_key)
+    {
+        for (x = 0; x < wid - 3; x++)
+        {
+            byte a;
+            char c0, c1, c2, c3;
+            Term_what(x, event->y, &a, &c0);
+            Term_what(x + 1, event->y, &a, &c1);
+            Term_what(x + 2, event->y, &a, &c2);
+            Term_what(x + 3, event->y, &a, &c3);
+            if ((isalpha((unsigned char)c0) || isdigit((unsigned char)c0))
+                && c1 == ' ' && c2 == '-' && c3 == ' ')
+            {
+                int dist = ABS(x - event->x);
+                if (dist < best_dist)
+                {
+                    best_dist = dist;
+                    best_key = (unsigned char)c0;
+                }
+            }
+            else if ((c0 == '[' || c0 == '(') && c2 == (c0 == '[' ? ']' : ')')
+                && (isalpha((unsigned char)c1) || isdigit((unsigned char)c1)))
+            {
+                int dist = ABS((x + 1) - event->x);
+                if (dist < best_dist)
+                {
+                    best_dist = dist;
+                    best_key = (unsigned char)c1;
+                }
+            }
+        }
+    }
+
     return best_key;
 }
 
@@ -3522,6 +3636,7 @@ static char inkey_from_menu(void)
     int num = 0, max_num, old_num = 0;
     int menu = 0;
     bool kisuu;
+    mouse_context_t old_ctx = mouse_context;
 
     /*if (py - panel_row_min > 10) basey = 2;
     else*/ basey = 13;
@@ -3531,6 +3646,7 @@ static char inkey_from_menu(void)
     prt("", 0, 0);
 
     screen_save();
+    mouse_context = MOUSE_CTX_MENU;
 
     while(1)
     {
@@ -3581,6 +3697,32 @@ static char inkey_from_menu(void)
 
         /* Get a command */
         sub_cmd = inkey();
+        if (sub_cmd == TERM_MOUSE_MOVE_KEY) continue;
+        if (sub_cmd == TERM_MOUSE_KEY)
+        {
+            mouse_event_t ev;
+            if (!mouse_get_event(&ev)) continue;
+            if (ev.button == TERM_MOUSE_BUTTON_RIGHT)
+            {
+                sub_cmd = ESCAPE;
+            }
+            else if (ev.y >= basey + 1 && ev.y <= basey + 5 && ev.x >= basex + 1 && ev.x <= basex + 52)
+            {
+                int row_idx = ev.y - (basey + 1);
+                int col_idx = (ev.x >= basex + 26) ? 1 : 0;
+                int clicked = row_idx * 2 + col_idx;
+                if (clicked >= 0 && clicked < max_num)
+                {
+                    num = clicked;
+                    sub_cmd = '\r';
+                }
+                else continue;
+            }
+            else
+            {
+                sub_cmd = ESCAPE;
+            }
+        }
         if ((sub_cmd == ' ') || (sub_cmd == 'x') || (sub_cmd == 'X') || (sub_cmd == '\r') || (sub_cmd == '\n'))
         {
             if (menu_info[menu][num].fin)
@@ -3649,6 +3791,7 @@ static char inkey_from_menu(void)
         }
     }
 
+    mouse_context = old_ctx;
     screen_load();
     if (!inkey_next) inkey_next = "";
 
@@ -3727,13 +3870,17 @@ void request_command(int shopping)
         /* Get a keypress in "command" mode */
         else
         {
+            mouse_context_t old_ctx = mouse_context;
             auto_more_state = AUTO_MORE_PROMPT;
 
             /* Activate "command mode" */
             inkey_flag = TRUE;
+            mouse_context = shopping ? MOUSE_CTX_SHOP : MOUSE_CTX_MAP;
 
             /* Get a command */
             cmd = inkey();
+
+            mouse_context = old_ctx;
 
             if (!shopping && command_menu && ((cmd == '\r') || (cmd == '\n') || (cmd == 'x') || (cmd == 'X'))
                 && !keymap_act[mode][(byte)(cmd)])

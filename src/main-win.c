@@ -85,6 +85,7 @@
 
 #include <windows.h>
 #include <direct.h>
+#include <stdarg.h>
 
 /*
  * Extract the "WIN32" flag from the compiler
@@ -549,6 +550,47 @@ static cptr ANGBAND_DIR_XTRA_HELP;
 #ifdef USE_MUSIC
 static cptr ANGBAND_DIR_XTRA_MUSIC;
 #endif
+
+static void _mouse_dbg(cptr fmt, ...)
+{
+    FILE *fp;
+    va_list vp;
+    char msg[256];
+    /* #region agent log */
+    fp = fopen("C:\\Users\\Lecoo\\Desktop\\Git\\frogcomposband\\debug-527ed0.log", "a");
+    if (!fp) return;
+    va_start(vp, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, vp);
+    va_end(vp);
+    fprintf(fp,
+        "{\"sessionId\":\"527ed0\",\"runId\":\"run1\",\"hypothesisId\":\"H1\","
+        "\"location\":\"main-win.c\",\"message\":\"%s\",\"data\":{},\"timestamp\":%lu}\n",
+        msg, (unsigned long)GetTickCount64());
+    fclose(fp);
+    /* #endregion */
+}
+
+static errr _queue_mousepress_for_td(term_data *td, int x, int y, int button, int mods)
+{
+    term *old = Term;
+    errr rc;
+    if (!td) return -1;
+    Term_activate(&td->t);
+    rc = Term_mousepress_aux(x, y, button, mods);
+    if (old) Term_activate(old);
+    return rc;
+}
+
+static errr _queue_mousemove_for_td(term_data *td, int x, int y)
+{
+    term *old = Term;
+    errr rc;
+    if (!td) return -1;
+    Term_activate(&td->t);
+    rc = Term_mousemove_aux(x, y);
+    if (old) Term_activate(old);
+    return rc;
+}
 
 
 /*
@@ -1578,7 +1620,7 @@ void Term_inversed_area(HWND hWnd, int x, int y, int w, int h)
     HPEN oldPen;
     HBRUSH myBrush, oldBrush;
 
-    term_data *td = (term_data *)GetWindowLong(hWnd, 0);
+    term_data *td = (term_data *)GetWindowLongPtr(hWnd, 0);
     int tx = td->size_ow1 + x * td->tile_wid;
     int ty = td->size_oh1 + y * td->tile_hgt;
     int tw = w * td->tile_wid - 1;
@@ -3615,7 +3657,7 @@ LRESULT FAR PASCAL AngbandWndProc(HWND hWnd, UINT uMsg,
 
 
     /* Acquire proper "term_data" info */
-    td = (term_data *)GetWindowLong(hWnd, 0);
+    td = (term_data *)GetWindowLongPtr(hWnd, 0);
 
     /* Handle message */
     switch (uMsg)
@@ -3623,7 +3665,7 @@ LRESULT FAR PASCAL AngbandWndProc(HWND hWnd, UINT uMsg,
         /* XXX XXX XXX */
         case WM_NCCREATE:
         {
-            SetWindowLong(hWnd, 0, (LONG)(my_td));
+            SetWindowLongPtr(hWnd, 0, (LONG_PTR)(my_td));
             break;
         }
 
@@ -3685,88 +3727,64 @@ LRESULT FAR PASCAL AngbandWndProc(HWND hWnd, UINT uMsg,
         {
             mousex = MIN(LOWORD(lParam) / td->tile_wid, td->cols - 1);
             mousey = MIN(HIWORD(lParam) / td->tile_hgt, td->rows - 1);
-            mouse_down = TRUE;
+            /* Disable legacy drag-selection mode; we want gameplay clicks */
+            mouse_down = FALSE;
             oldx = mousex;
             oldy = mousey;
+            _mouse_dbg("WIN LDOWN x=%d y=%d ctx=%d use_mouse=%d", mousex, mousey, mouse_context, use_mouse);
+            return 0;
+        }
+
+        case WM_RBUTTONDOWN:
+        {
+            int mods = 0;
+            int x = MIN(LOWORD(lParam) / td->tile_wid, td->cols - 1);
+            int y = MIN(HIWORD(lParam) / td->tile_hgt, td->rows - 1);
+            if (GetKeyState(VK_SHIFT) & 0x8000) mods |= TERM_MOUSE_MOD_SHIFT;
+            if (GetKeyState(VK_CONTROL) & 0x8000) mods |= TERM_MOUSE_MOD_CTRL;
+            if (GetKeyState(VK_MENU) & 0x8000) mods |= TERM_MOUSE_MOD_ALT;
+            _mouse_dbg("WIN RDOWN x=%d y=%d mods=%d ctx=%d", x, y, mods, mouse_context);
+            _queue_mousepress_for_td(td, x, y, TERM_MOUSE_BUTTON_RIGHT, mods);
             return 0;
         }
 
         case WM_LBUTTONUP:
         {
-            HGLOBAL hGlobal;
-            LPSTR lpStr;
-            int i, j, sz;
-            int dx = abs(oldx - mousex) + 1;
-            int dy = abs(oldy - mousey) + 1;
-            int ox = (oldx > mousex) ? mousex : oldx;
-            int oy = (oldy > mousey) ? mousey : oldy;
+            int mods = 0;
+            int rx = MIN(LOWORD(lParam) / td->tile_wid, td->cols - 1);
+            int ry = MIN(HIWORD(lParam) / td->tile_hgt, td->rows - 1);
 
             mouse_down = FALSE;
             paint_rect = FALSE;
 
-            sz = (dx + 2) * dy;
-            hGlobal = GlobalAlloc(GHND, sz + 1);
-            if (hGlobal == NULL) return 0;
-            lpStr = (LPSTR)GlobalLock(hGlobal);
-
-            for (i = 0; i < dy; i++)
-            {
-                for (j = 0; j < dx; j++)
-                {
-                    *lpStr++ = data[0].t.scr->c[oy + i][ox + j];
-                }
-                if (dy > 1)
-                {
-                    *lpStr++ = '\r';
-                    *lpStr++ = '\n';
-                }
-            }
-
-            GlobalUnlock(hGlobal);
-            if (OpenClipboard(hWnd) == 0)
-            {
-                GlobalFree(hGlobal);
-                return 0;
-            }
-            EmptyClipboard();
-            SetClipboardData(CF_TEXT, hGlobal);
-            CloseClipboard();
-
-            Term_redraw();
+            if (GetKeyState(VK_SHIFT) & 0x8000) mods |= TERM_MOUSE_MOD_SHIFT;
+            if (GetKeyState(VK_CONTROL) & 0x8000) mods |= TERM_MOUSE_MOD_CTRL;
+            if (GetKeyState(VK_MENU) & 0x8000) mods |= TERM_MOUSE_MOD_ALT;
+            _mouse_dbg("WIN LUP x=%d y=%d mods=%d ctx=%d", rx, ry, mods, mouse_context);
+            _queue_mousepress_for_td(td, rx, ry, TERM_MOUSE_BUTTON_LEFT, mods);
 
             return 0;
         }
 
         case WM_MOUSEMOVE:
         {
-            if (mouse_down)
+            if (!td) return 0;
+            int cx = MIN(LOWORD(lParam) / td->tile_wid, td->cols - 1);
+            int cy = MIN(HIWORD(lParam) / td->tile_hgt, td->rows - 1);
+
+            if (use_mouse
+                && (mouse_context == MOUSE_CTX_BIRTH || mouse_context == MOUSE_CTX_MAP))
             {
-                int dx, dy;
-                int cx = MIN(LOWORD(lParam) / td->tile_wid, td->cols - 1);
-                int cy = MIN(HIWORD(lParam) / td->tile_hgt, td->rows - 1);
-                int ox, oy;
-
-                if (paint_rect)
+                /* Inject hover event only when tile coordinates change */
+                static int _last_hover_x = -1;
+                static int _last_hover_y = -1;
+                if (cx != _last_hover_x || cy != _last_hover_y)
                 {
-                    dx = abs(oldx - mousex) + 1;
-                    dy = abs(oldy - mousey) + 1;
-                    ox = (oldx > mousex) ? mousex : oldx;
-                    oy = (oldy > mousey) ? mousey : oldy;
-                    Term_inversed_area(hWnd, ox, oy, dx, dy);
+                    _last_hover_x = cx;
+                    _last_hover_y = cy;
+                    _mouse_dbg("WIN MOVE x=%d y=%d ctx=%d", cx, cy, mouse_context);
+                    _queue_mousemove_for_td(td, cx, cy);
                 }
-                else
-                {
-                    paint_rect = TRUE;
-                }
-
-                dx = abs(cx - mousex) + 1;
-                dy = abs(cy - mousey) + 1;
-                ox = (cx > mousex) ? mousex : cx;
-                oy = (cy > mousey) ? mousey : cy;
-                Term_inversed_area(hWnd, ox, oy, dx, dy);
-
-                oldx = cx;
-                oldy = cy;
             }
             return 0;
         }
@@ -3960,6 +3978,7 @@ LRESULT FAR PASCAL AngbandWndProc(HWND hWnd, UINT uMsg,
 
         case WM_ACTIVATEAPP:
         {
+            if (!td || !td->w) break;
             if (IsIconic(td->w)) break;
 
             for (i = 1; i < MAX_TERM_DATA; i++)
@@ -4000,7 +4019,7 @@ LRESULT FAR PASCAL AngbandListProc(HWND hWnd, UINT uMsg,
 
 
     /* Acquire proper "term_data" info */
-    td = (term_data *)GetWindowLong(hWnd, 0);
+    td = (term_data *)GetWindowLongPtr(hWnd, 0);
 
     /* Process message */
     switch (uMsg)
@@ -4008,7 +4027,7 @@ LRESULT FAR PASCAL AngbandListProc(HWND hWnd, UINT uMsg,
         /* XXX XXX XXX */
         case WM_NCCREATE:
         {
-            SetWindowLong(hWnd, 0, (LONG)(my_td));
+            SetWindowLongPtr(hWnd, 0, (LONG_PTR)(my_td));
             break;
         }
 
@@ -4278,6 +4297,24 @@ static void hack_quit(cptr str)
     /* Give a warning */
     if (str)
     {
+        {
+            char path[1024];
+            char *slash;
+            FILE *fff;
+
+            /* Write a crash log next to the executable */
+            GetModuleFileName(hInstance, path, 512);
+            slash = strrchr(path, '\\');
+            if (slash) slash[1] = '\0';
+            strcat(path, "frogcomposband-crash.txt");
+            fff = fopen(path, "a");
+            if (fff)
+            {
+                fprintf(fff, "%s\n", str);
+                fclose(fff);
+            }
+        }
+
         MessageBox(NULL, str, "Error",
                MB_ICONEXCLAMATION | MB_OK | MB_ICONSTOP);
 
@@ -4521,13 +4558,21 @@ int FAR PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrevInst,
     /* Save globally */
     hInstance = hInst;
 
+    {
+        char cwd[1024];
+        char exe[1024];
+        GetCurrentDirectory(sizeof(cwd), cwd);
+        GetModuleFileName(hInstance, exe, sizeof(exe));
+        _mouse_dbg("STARTUP cwd=%s exe=%s", cwd, exe);
+    }
+
     /* Initialize */
     if (hPrevInst == NULL)
     {
         wc.style         = CS_CLASSDC;
         wc.lpfnWndProc   = AngbandWndProc;
         wc.cbClsExtra    = 0;
-        wc.cbWndExtra    = 4; /* one long pointer to term_data */
+        wc.cbWndExtra    = sizeof(LONG_PTR); /* one pointer to term_data */
         wc.hInstance     = hInst;
         wc.hIcon         = hIcon = LoadIcon(hInst, AppName);
         wc.hCursor       = LoadCursor(NULL, IDC_ARROW);

@@ -859,6 +859,43 @@ static errr Term_xtra_gcu_event(int v)
     * The idea of translating here is from current Vanilla
     * TODO */
 
+ #ifdef KEY_MOUSE
+   if (i == KEY_MOUSE)
+   {
+ #ifdef NCURSES_MOUSE_VERSION
+      MEVENT event;
+      if (getmouse(&event) == OK)
+      {
+         int button = 0;
+         int mods = 0;
+         if (event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED | BUTTON1_RELEASED))
+            button = TERM_MOUSE_BUTTON_LEFT;
+         else if (event.bstate & (BUTTON3_CLICKED | BUTTON3_PRESSED | BUTTON3_RELEASED))
+            button = TERM_MOUSE_BUTTON_RIGHT;
+         else if (event.bstate & (BUTTON2_CLICKED | BUTTON2_PRESSED | BUTTON2_RELEASED))
+            button = TERM_MOUSE_BUTTON_MIDDLE;
+
+#ifdef BUTTON_SHIFT
+         if (event.bstate & BUTTON_SHIFT) mods |= TERM_MOUSE_MOD_SHIFT;
+#endif
+#ifdef BUTTON_CTRL
+         if (event.bstate & BUTTON_CTRL) mods |= TERM_MOUSE_MOD_CTRL;
+#endif
+#ifdef BUTTON_ALT
+         if (event.bstate & BUTTON_ALT) mods |= TERM_MOUSE_MOD_ALT;
+#endif
+
+         if (button)
+         {
+            Term_mousepress_aux(event.x, event.y, button, mods);
+            return (0);
+         }
+      }
+ #endif
+      return (1);
+   }
+ #endif
+
    /* Backspace */
    if (i == 0x7F)
       i = '\b';
@@ -1531,6 +1568,13 @@ errr init_gcu(int argc, char *argv[])
    noecho();
    nonl();
    raw();
+
+#ifdef NCURSES_MOUSE_VERSION
+   mousemask(BUTTON1_CLICKED | BUTTON1_PRESSED | BUTTON1_RELEASED |
+             BUTTON2_CLICKED | BUTTON2_PRESSED | BUTTON2_RELEASED |
+             BUTTON3_CLICKED | BUTTON3_PRESSED | BUTTON3_RELEASED, NULL);
+   mouseinterval(0);
+#endif
 
    /* Extract the game keymap */
    keymap_game_prepare();

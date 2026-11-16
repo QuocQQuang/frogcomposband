@@ -6478,7 +6478,7 @@ int take_hit(int damage_type, int damage, cptr hit_from)
     }
 
     
-    if ((p_ptr->wizard || easy_damage) && (damage > 0))
+    if (damage > 0)
         msg_format("You take %d damage.", damage);
 
     p_ptr->chp -= damage;

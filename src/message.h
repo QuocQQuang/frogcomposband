@@ -3,6 +3,9 @@
 
 #include "c-string.h"
 
+/* Number of persistent combat log lines shown at bottom of screen */
+#define COMBAT_LOG_LINES 5
+
 /* Stop using auto_more and use the new improved handling instead! */
 #define AUTO_MORE_PROMPT     0
 #define AUTO_MORE_SKIP_ONE   1   /* Skip to next message */
@@ -56,5 +59,12 @@ extern bool paranoid_msg_prompt(cptr buf, int options);
 extern bool msg_input(cptr prompt, char *buf, int len);
 extern bool msg_input_num(cptr prompt, int *num, int min, int max);
 extern bool msg_command(cptr prompt, char *cmd);
+
+/* Persistent combat log (bottom of screen, not cleared on command) */
+extern void  cmsg_combat(byte color, cptr msg);
+extern void  msg_combat(cptr msg);
+extern void  cmsg_combat_format(byte color, cptr fmt, ...);
+extern void  msg_combat_format(cptr fmt, ...);
+extern void  combat_log_redraw(void);
 
 #endif

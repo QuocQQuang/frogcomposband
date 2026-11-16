@@ -17,6 +17,16 @@ static doc_ptr   _msg_line_doc = NULL;
 static doc_pos_t _msg_line_sync_pos;
 static doc_pos_t _msg_line_last_msg_pos;
 
+/* The Persistent Combat Log (bottom of screen, never cleared on command) */
+static char  _combat_log[COMBAT_LOG_LINES][1024];
+static byte  _combat_log_color[COMBAT_LOG_LINES];
+static int   _combat_log_write = 0;  /* next slot to write (mod COMBAT_LOG_LINES) */
+static int   _combat_log_total = 0;  /* total messages ever added */
+
+/* Forward declaration – defined at bottom of file */
+static void _render_combat_log(void);
+
+
 msg_ptr _msg_alloc(cptr s)
 {
     msg_ptr m = malloc(sizeof(msg_t));
@@ -45,8 +55,14 @@ void msg_on_startup(void)
     _msg_head = 0;
     _msg_append = FALSE;
 
+    memset(_combat_log, 0, sizeof(_combat_log));
+    memset(_combat_log_color, TERM_WHITE, sizeof(_combat_log_color));
+    _combat_log_write = 0;
+    _combat_log_total = 0;
+
     msg_line_init(ui_msg_rect());
 }
+
 
 void msg_on_shutdown(void)
 {
@@ -290,40 +306,9 @@ static void msg_line_sync(void)
 
 static void msg_line_flush(void)
 {
-    if (auto_more_state == AUTO_MORE_PROMPT)
-    {
-        doc_insert_text(_msg_line_doc, TERM_L_BLUE, "-more-");
-        msg_line_sync();
-
-        for(;;)
-        {
-            int cmd;
-            flush();
-            cmd = inkey();
-            if (cmd == ESCAPE)
-            {
-                auto_more_state = AUTO_MORE_SKIP_ALL;
-                break;
-            }
-            else if (cmd == '\n' || cmd == '\r' || cmd == 'n')
-            {
-                auto_more_state = AUTO_MORE_SKIP_BLOCK;
-                break;
-            }
-            else if (cmd == '?')
-            {
-                screen_save_aux();
-                doc_display_help("context_more_prompt.txt", NULL);
-                screen_load_aux();
-                continue;
-            }
-            else if (cmd == ' ' || cmd == 'm' || quick_messages)
-            {
-                break;
-            }
-            bell();
-        }
-    }
+    /* Non-blocking flush: never interrupt gameplay with "-more-".
+     * We keep the normal message queue/history; only the transient line
+     * display is cleared to make room for subsequent messages. */
     msg_line_clear();
 }
 
@@ -384,31 +369,64 @@ static char msg_prompt_imp(cptr prompt, char keys[], int options)
     auto_more_state = AUTO_MORE_PROMPT;
     msg_print(prompt);
 
-    for (;;)
     {
-        char ch = inkey();
-        int  i;
-
-        if (ch == ESCAPE && (options & PROMPT_ESCAPE_DEFAULT))
-            return keys[0];
-
-        if (ch == '\r' && (options & PROMPT_RETURN_1))
-            return keys[1];
-
-        for (i = 0; ; i++)
+        mouse_context_t old_ctx = mouse_context;
+        mouse_context = MOUSE_CTX_PROMPT;
+        for (;;)
         {
-            char choice = keys[i];
-            if (!choice) break;
-            if (ch == choice) return choice;
-            if (!(options & PROMPT_CASE_SENSITIVE))
+            char ch = inkey();
+            int  i;
+
+            if (ch == TERM_MOUSE_MOVE_KEY) continue;
+            if (ch == TERM_MOUSE_KEY)
             {
-                if (tolower(ch) == tolower(choice))
-                    return choice;
+                mouse_event_t ev;
+                if (!mouse_get_event(&ev)) continue;
+                if (ev.button == TERM_MOUSE_BUTTON_RIGHT)
+                {
+                    ch = ESCAPE;
+                }
+                else
+                {
+                    int choice = mouse_find_choice(&ev);
+                    if (!choice) continue;
+                    ch = (char)choice;
+                }
+            }
+
+            if (ch == ESCAPE && (options & PROMPT_ESCAPE_DEFAULT))
+            {
+                mouse_context = old_ctx;
+                return keys[0];
+            }
+
+            if (ch == '\r' && (options & PROMPT_RETURN_1))
+            {
+                mouse_context = old_ctx;
+                return keys[1];
+            }
+
+            for (i = 0; ; i++)
+            {
+                char choice = keys[i];
+                if (!choice) break;
+                if (ch == choice) { mouse_context = old_ctx; return choice; }
+                if (!(options & PROMPT_CASE_SENSITIVE))
+                {
+                    if (tolower(ch) == tolower(choice))
+                    {
+                        mouse_context = old_ctx;
+                        return choice;
+                    }
+                }
+            }
+
+            if (!(options & PROMPT_FORCE_CHOICE) && quick_messages)
+            {
+                mouse_context = old_ctx;
+                return keys[0];
             }
         }
-
-        if (!(options & PROMPT_FORCE_CHOICE) && quick_messages)
-            return keys[0];
     }
 }
 
@@ -430,14 +448,42 @@ bool paranoid_msg_prompt(cptr buf, int options)
 bool msg_command(cptr prompt, char *cmd)
 {
     bool result = FALSE;
+    mouse_context_t old_ctx = mouse_context;
     msg_boundary();
     auto_more_state = AUTO_MORE_PROMPT;
     msg_print(prompt);
 
-    if (get_com_no_macros)
-        *cmd = inkey_special(FALSE);
-    else
-        *cmd = inkey();
+    if (mouse_context == MOUSE_CTX_NONE)
+        mouse_context = MOUSE_CTX_PROMPT;
+
+    for (;;)
+    {
+        if (get_com_no_macros)
+            *cmd = inkey_special(FALSE);
+        else
+            *cmd = inkey();
+
+        if (*cmd == TERM_MOUSE_MOVE_KEY) continue;
+        if (*cmd == TERM_MOUSE_KEY)
+        {
+            mouse_event_t ev;
+            if (!mouse_get_event(&ev)) continue;
+            if (ev.button == TERM_MOUSE_BUTTON_RIGHT)
+            {
+                *cmd = ESCAPE;
+                break;
+            }
+            else
+            {
+                int choice = mouse_find_choice(&ev);
+                if (!choice) continue;
+                *cmd = (char)choice;
+            }
+        }
+        break;
+    }
+
+    mouse_context = old_ctx;
 
     if (*cmd == ESCAPE)
         cmsg_print(TERM_L_RED, "Cancelled");
@@ -485,6 +531,19 @@ void cmsg_print(byte color, cptr msg)
             cmsg_append(color, msg);
         else
             cmsg_add(color, msg);
+
+        /* Feed every non-prompt message into the persistent combat log.
+         * cmsg_combat() would double-add to history, so we directly
+         * write to the ring buffer and render. */
+        {
+            int slot = _combat_log_write % COMBAT_LOG_LINES;
+            strncpy(_combat_log[slot], msg, sizeof(_combat_log[0]) - 1);
+            _combat_log[slot][sizeof(_combat_log[0]) - 1] = '\0';
+            _combat_log_color[slot] = color;
+            _combat_log_write = (_combat_log_write + 1) % COMBAT_LOG_LINES;
+            _combat_log_total++;
+            _render_combat_log();
+        }
     }
 
     msg_line_display(color, msg);
@@ -494,18 +553,7 @@ void cmsg_print(byte color, cptr msg)
 
     p_ptr->window |= PW_MESSAGE;
 
-    /* BUG: notice_stuff()
-     *       pack_optimize()
-     *        cmsg_print()
-     *         window_stuff()
-     *          _fix_equip_aux()
-     * This means PW_EQUIP redraws before PU_BONUS and
-     * gives incorrect info with no way to fix! Clients
-     * are supposed to be able to set notice and redraw
-     * and update flags and have things just work! Grrr ...
-     *
-    window_stuff(); */
-    if (fresh_message) /* ?? */
+    if (fresh_message)
         Term_fresh();
 
     _msg_append = TRUE;
@@ -609,3 +657,95 @@ bool msg_input_num(cptr prompt, int *num, int min, int max)
     msg_line_clear();
     return result;
 }
+
+/* ===================================================================
+ * Persistent Combat Log
+ * Renders last COMBAT_LOG_LINES messages directly at the bottom of
+ * the screen (via combat_log_rect() from xtra2.c). Never cleared when
+ * the player opens a command/menu - only scrolled when new msgs arrive.
+ * =================================================================== */
+
+static void _render_combat_log(void)
+{
+    rect_t  r = combat_log_rect();
+    int     i, n, slot, row;
+    doc_ptr doc;
+
+    if (!Term) return;
+
+    n = MIN(_combat_log_total, COMBAT_LOG_LINES);
+
+    /* Clear the 5 combat log rows */
+    for (i = 0; i < COMBAT_LOG_LINES; i++)
+        Term_erase(r.x, r.y + i, r.cx);
+
+    if (n == 0) return;
+
+    /* Use a doc_ptr so that color markup <color:x>...</color> is parsed.
+     * Term_putstr() only draws raw text and would show tags literally. */
+    doc = doc_alloc(r.cx);
+
+    for (i = 0; i < n; i++)
+    {
+        int age = n - 1 - i;   /* 0 = newest, n-1 = oldest visible */
+        slot = (_combat_log_write - 1 - age + COMBAT_LOG_LINES * 1000) % COMBAT_LOG_LINES;
+        row  = r.y + (COMBAT_LOG_LINES - n) + i;
+
+        /* Reset doc to beginning for each line */
+        doc_rollback(doc, doc_pos_create(0, 0));
+
+        /* Insert text – this parses color markup correctly */
+        doc_insert_text(doc, _combat_log_color[slot], _combat_log[slot]);
+
+        /* Sync exactly one line to the target terminal row */
+        doc_sync_term(doc,
+            doc_range_all(doc),
+            doc_pos_create(r.x, row));
+    }
+
+    doc_free(doc);
+}
+
+
+/* Called by screen_load() after Term_load() to repaint the combat area */
+void combat_log_redraw(void)
+{
+    _render_combat_log();
+}
+
+/* cmsg_combat: now delegates to cmsg_print which auto-feeds the combat log.
+ * Kept as a named API for readability and in case callers bypass cmsg_print. */
+void cmsg_combat(byte color, cptr msg)
+{
+    cmsg_print(color, msg);
+}
+
+void msg_combat(cptr msg)
+{
+    cmsg_print(TERM_WHITE, msg);
+}
+
+void cmsg_combat_format(byte color, cptr fmt, ...)
+{
+    va_list vp;
+    char    buf[1024];
+
+    va_start(vp, fmt);
+    (void)vstrnfmt(buf, sizeof(buf), fmt, vp);
+    va_end(vp);
+
+    cmsg_print(color, buf);
+}
+
+void msg_combat_format(cptr fmt, ...)
+{
+    va_list vp;
+    char    buf[1024];
+
+    va_start(vp, fmt);
+    (void)vstrnfmt(buf, sizeof(buf), fmt, vp);
+    va_end(vp);
+
+    cmsg_print(TERM_WHITE, buf);
+}
+

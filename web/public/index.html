@@ -31,6 +31,10 @@
           <span class="pill-lbl">Gold</span>
           <span class="pill-val gold" id="pill-gold">0</span>
         </div>
+        <div class="pill" title="Satiety / Hunger">
+          <span class="pill-lbl">Food</span>
+          <span class="pill-val" id="pill-food">Full</span>
+        </div>
       </div>
 
       <div class="toolbar-actions">
@@ -45,7 +49,7 @@
           Controls: <strong id="lbl-ctrl-mode">WASD</strong>
         </button>
 
-        <button id="btn-fx" class="tool-btn active" title="Toggle Bayer Torchlight & Particles">
+        <button id="btn-fx" class="tool-btn active" title="Toggle Fog-of-War & Lighting Effects">
           ✨FX
         </button>
 
@@ -59,12 +63,12 @@
         <button id="btn-dpad" class="tool-btn" title="Toggle On-Screen D-Pad">🕹</button>
         <button id="btn-sidebar" class="tool-btn active" title="Toggle Hero & Log Panels">◧</button>
         <a href="/help/index.html" target="_blank" class="tool-btn" title="Open Game Manual">?</a>
-        <button id="btn-lobby" class="tool-btn danger-ghost" title="Return to Title / Save Lobby">Lobby</button>
+        <button id="btn-lobby" class="tool-btn danger-ghost" title="Save or Return to Lobby">Lobby</button>
       </div>
     </header>
 
     <!-- Main Workspace -->
-    <main class="workspace">
+    <main class="workspace birth-wide" id="workspace">
       <!-- Left HUD: Hero Stats, Vitals, Inventory, Radar -->
       <aside id="left-panel" class="side-panel left-panel">
         <section class="card hero-card">
@@ -111,17 +115,20 @@
 
         <!-- Target Card (shown when targeting) -->
         <section class="card target-card hidden" id="target-card">
-          <div class="card-title">🎯 Active Target</div>
+          <div class="card-title-row" style="margin-bottom:4px">
+            <span class="card-title">🎯 Active Target</span>
+            <button class="mini-btn" id="btn-retarget" title="Re-target (*)">Switch</button>
+          </div>
           <div class="target-name" id="target-name">-</div>
           <div class="bar-track thin"><div class="bar-fill hp" id="target-hp-bar" style="width: 100%"></div></div>
         </section>
 
-        <!-- Tabs: Backpack / Equipment / Nearby Monsters -->
+        <!-- Tabs: Nearby / Pack / Gear -->
         <section class="card drawer-card">
           <div class="tab-header">
-            <button class="tab-btn active" data-tab="radar">Nearby</button>
-            <button class="tab-btn" data-tab="inven">Pack</button>
-            <button class="tab-btn" data-tab="equip">Gear</button>
+            <button class="tab-btn active" data-tab="radar" id="tab-btn-radar">Nearby</button>
+            <button class="tab-btn" data-tab="inven" id="tab-btn-inven">Pack</button>
+            <button class="tab-btn" data-tab="equip" id="tab-btn-equip">Gear</button>
           </div>
           <div class="tab-body" id="tab-radar">
             <div class="empty-hint">No visible creatures nearby.</div>
@@ -144,47 +151,56 @@
           <div id="hover-tooltip" class="hover-tooltip hidden">
             <div class="ht-title" id="ht-title"></div>
             <div class="ht-sub" id="ht-sub"></div>
+            <div class="ht-meta" id="ht-meta"></div>
             <div class="ht-bar-wrap hidden" id="ht-bar-wrap">
               <div class="ht-bar-fill" id="ht-bar-fill"></div>
             </div>
+            <div class="ht-badges hidden" id="ht-badges"></div>
+            <div class="ht-details hidden" id="ht-details"></div>
           </div>
 
-          <!-- Context Prompt Pills (More / Confirm / Menu Helpers) -->
-          <div id="prompt-actions" class="prompt-actions hidden">
-            <button class="prompt-pill" data-key="32">Space · Continue</button>
-            <button class="prompt-pill" data-key="13">Enter · Confirm</button>
-            <button class="prompt-pill" data-key="121">Y · Yes</button>
-            <button class="prompt-pill" data-key="110">N · No</button>
-            <button class="prompt-pill ghost" data-key="27">Esc · Back</button>
-          </div>
+          <!-- Toast Banner -->
+          <div id="toast-banner" class="toast-banner hidden"></div>
+
+          <!-- Context-Aware Prompt Actions (dynamically populated by app.js) -->
+          <div id="prompt-actions" class="prompt-actions hidden"></div>
 
           <!-- Optional On-Screen Touch / Click D-Pad -->
           <div id="touch-dpad" class="touch-dpad hidden">
             <button data-dir="7">↖</button><button data-dir="8">↑</button><button data-dir="9">↗</button>
-            <button data-dir="4">←</button><button data-key="46" class="center">·</button><button data-dir="6">→</button>
+            <button data-dir="4">←</button><button data-key="44" class="center" title="Wait 1 Turn">·</button><button data-dir="6">→</button>
             <button data-dir="1">↙</button><button data-dir="2">↓</button><button data-dir="3">↘</button>
           </div>
         </div>
 
         <!-- Modern Action Hotbar -->
         <div class="hotbar" id="hotbar">
-          <button class="hb-btn" data-cmd="." title="Wait / Stay 1 Turn (.)"><span>⏳</span><small>Wait</small></button>
-          <button class="hb-btn" data-cmd="R" title="Rest until healed (R)"><span>⛺</span><small>Rest</small></button>
-          <button class="hb-btn" data-cmd="s" title="Search for traps/doors (s)"><span>🔍</span><small>Search</small></button>
-          <button class="hb-btn" data-cmd="g" title="Pick up items (g)"><span>🎒</span><small>Get</small></button>
-          <button class="hb-btn" data-cmd="l" title="Look / Inspect (l)"><span>👁</span><small>Look</small></button>
-          <button class="hb-btn" data-cmd="f" title="Fire missile / Target (f)"><span>🏹</span><small>Fire</small></button>
-          <button class="hb-btn" data-cmd="m" title="Cast spell (m)"><span>✨</span><small>Cast</small></button>
-          <button class="hb-btn" data-cmd="U" title="Use racial/class power (U)"><span>⚡</span><small>Power</small></button>
-          <button class="hb-btn" data-cmd="q" title="Quaff potion (q)"><span>🧪</span><small>Quaff</small></button>
-          <button class="hb-btn" data-cmd="r" title="Read scroll (r)"><span>📜</span><small>Read</small></button>
-          <button class="hb-btn" data-cmd="z" title="Zap rod (z)"><span>🪄</span><small>Zap</small></button>
-          <button class="hb-btn" data-cmd="i" title="Inventory (i)"><span>📦</span><small>Pack</small></button>
-          <button class="hb-btn" data-cmd="C" title="Character Sheet (C)"><span>🛡</span><small>Char</small></button>
-          <button class="hb-btn" data-cmd="M" title="Dungeon Map (M)"><span>🗺</span><small>Map</small></button>
-          <button class="hb-btn" data-cmd=">" title="Go down stairs (>)"><span>🔽</span><small>Down</small></button>
-          <button class="hb-btn" data-cmd="<" title="Go up stairs (<)"><span>🔼</span><small>Up</small></button>
-          <button class="hb-btn" data-key="19" title="Save & Exit (^S)"><span>💾</span><small>Save</small></button>
+          <button class="hb-btn" data-cmd="," data-wasd="X" data-classic="." title="Wait / Stay 1 Turn"><kbd>,</kbd><span>⏳</span><small>Wait</small></button>
+          <button class="hb-btn" data-cmd="R" title="Rest until healed (R)"><kbd>R</kbd><span>⛺</span><small>Rest</small></button>
+          <button class="hb-btn" data-cmd="s" title="Search around you (s)"><kbd>s</kbd><span>🔍</span><small>Search</small></button>
+          <button class="hb-btn" data-cmd="o" title="Open door / chest (o)"><kbd>o</kbd><span>🚪</span><small>Open</small></button>
+          <button class="hb-btn" data-cmd="c" title="Close door (c)"><kbd>c</kbd><span>🔒</span><small>Close</small></button>
+          <button class="hb-btn" data-cmd="D" title="Disarm trap (D)"><kbd>D</kbd><span>⚙</span><small>Disarm</small></button>
+          <button class="hb-btn" data-cmd="g" title="Pick up items (g)"><kbd>g</kbd><span>🎒</span><small>Get</small></button>
+          <button class="hb-btn" data-cmd="d" title="Drop item (d)"><kbd>d</kbd><span>📤</span><small>Drop</small></button>
+          <button class="hb-btn" data-cmd="w" title="Wear / wield item (w)"><kbd>w</kbd><span>🧤</span><small>Wear</small></button>
+          <button class="hb-btn" data-cmd="q" title="Quaff potion (q)"><kbd>q</kbd><span>🧪</span><small>Quaff</small></button>
+          <button class="hb-btn" data-cmd="r" title="Read scroll (r)"><kbd>r</kbd><span>📜</span><small>Read</small></button>
+          <button class="hb-btn" data-cmd="E" title="Eat food (E)"><kbd>E</kbd><span>🍖</span><small>Eat</small></button>
+          <button class="hb-btn" data-cmd="f" title="Fire missile / Target (f)"><kbd>f</kbd><span>🏹</span><small>Fire</small></button>
+          <button class="hb-btn" data-cmd="m" title="Cast spell (m)"><kbd>m</kbd><span>✨</span><small>Cast</small></button>
+          <button class="hb-btn" data-cmd="U" title="Use racial/class power (U)"><kbd>U</kbd><span>⚡</span><small>Power</small></button>
+          <button class="hb-btn" data-cmd="z" title="Zap rod (z)"><kbd>z</kbd><span>🪄</span><small>Zap</small></button>
+          <button class="hb-btn" data-cmd="a" title="Aim wand (a)"><kbd>a</kbd><span>🎇</span><small>Aim</small></button>
+          <button class="hb-btn" data-cmd="u" title="Use staff (u)"><kbd>u</kbd><span>🦯</span><small>Staff</small></button>
+          <button class="hb-btn" data-cmd="l" title="Look / Inspect (l)"><kbd>l</kbd><span>👁</span><small>Look</small></button>
+          <button class="hb-btn" data-cmd="i" title="Inventory (i)"><kbd>i</kbd><span>📦</span><small>Pack</small></button>
+          <button class="hb-btn" data-cmd="e" title="Equipment (e)"><kbd>e</kbd><span>⚔</span><small>Gear</small></button>
+          <button class="hb-btn" data-cmd="C" title="Character Sheet (C)"><kbd>C</kbd><span>🛡</span><small>Char</small></button>
+          <button class="hb-btn" data-cmd="M" title="Dungeon Map (M)"><kbd>M</kbd><span>🗺</span><small>Map</small></button>
+          <button class="hb-btn" data-cmd="<" title="Go up stairs (<)"><kbd>&lt;</kbd><span>🔼</span><small>Up</small></button>
+          <button class="hb-btn" data-cmd=">" title="Go down stairs (>)"><kbd>&gt;</kbd><span>🔽</span><small>Down</small></button>
+          <button class="hb-btn" data-key="19" data-allow-always="1" title="Save game (^S)"><kbd>^S</kbd><span>💾</span><small>Save</small></button>
         </div>
       </section>
 
@@ -193,19 +209,27 @@
         <section class="card log-card">
           <div class="card-title-row">
             <span class="card-title">📜 Chronicle</span>
-            <span class="hint-chip" id="ctx-badge">Lobby</span>
+            <div class="log-head-actions">
+              <button id="btn-log-latest" class="mini-btn hidden" title="Jump to latest log">↓ Latest</button>
+              <span class="hint-chip" id="ctx-badge">Lobby</span>
+            </div>
           </div>
           <div id="msg-log" class="msg-log"></div>
         </section>
 
         <section class="card controls-card">
-          <div class="card-title">🎮 Modern Controls</div>
-          <ul class="ctrl-list">
+          <div class="card-title-row" style="margin-bottom:4px">
+            <span class="card-title">🎮 Controls</span>
+            <span class="hint-chip" id="ctrl-mode-chip">WASD</span>
+          </div>
+          <ul class="ctrl-list" id="ctrl-list">
             <li><strong>Left Click Map</strong> Walk / Attack / Auto-Travel</li>
-            <li><strong>Right Click</strong> Look / Inspect / Cancel Menu</li>
-            <li><strong>Ctrl + Click</strong> Lock Target / Ranged</li>
-            <li><strong>Scroll Wheel</strong> Smooth Camera Zoom</li>
+            <li><strong>Right Click</strong> Look at Tile / Cancel Menu</li>
+            <li><strong>Ctrl / Mid Click</strong> Lock Target Immediately</li>
+            <li><strong>Shift + Click Self</strong> Rest Until Healed</li>
             <li><strong>WASD + QEZC</strong> 8-Way Move (Shift = Run)</li>
+            <li><strong>X / Numpad</strong> Wait 1 Turn / Numpad Move</li>
+            <li><strong>Scroll Wheel</strong> Smooth Zoom / Scroll Docs</li>
             <li><strong>F2</strong> Switch WASD ↔ Classic Keys</li>
           </ul>
         </section>
@@ -216,9 +240,9 @@
     <div id="lobby-modal" class="modal-backdrop">
       <div class="lobby-dialog">
         <div class="lobby-hero">
-          <div class="lobby-badge">WEB EDITION · 32x32 HD</div>
+          <div class="lobby-badge">WEB EDITION · HD TILES &amp; FULL MOUSE</div>
           <h2>FrogComposband</h2>
-          <p>Classic deep-roguelike mechanics reborn with 32x32 procedural tiles, dynamic torchlight, mouse travel, smart WASD, and synthesized audio.</p>
+          <p>Deep traditional roguelike mechanics with remastered 16/32px tiles, click-to-travel, instant target locking, smart WASD, interactive pack/gear panels, and synthesized audio.</p>
         </div>
 
         <div class="lobby-grid">
@@ -229,7 +253,7 @@
               <input id="new-hero-name" type="text" maxlength="15" value="PLAYER" placeholder="Enter hero name..." />
               <button id="btn-start-new" class="primary-btn">New Hero</button>
             </div>
-            <p class="small-note">Starts character creation with interactive mouse & keyboard support.</p>
+            <p class="small-note">Click options or use keyboard during character creation. Right-click goes back.</p>
           </div>
 
           <div class="lobby-box">
@@ -238,6 +262,19 @@
               <div class="empty-hint">Scanning saves...</div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Safe Exit Confirmation Modal -->
+    <div id="exit-modal" class="modal-backdrop hidden">
+      <div class="exit-dialog">
+        <h3>Return to Lobby?</h3>
+        <p id="exit-modal-desc">Save your current progress cleanly before returning to the lobby.</p>
+        <div class="exit-actions">
+          <button id="btn-exit-save" class="primary-btn">💾 Save &amp; Exit to Lobby</button>
+          <button id="btn-exit-discard" class="tool-btn danger-ghost">Force Exit (Unsaved)</button>
+          <button id="btn-exit-cancel" class="tool-btn">Cancel</button>
         </div>
       </div>
     </div>

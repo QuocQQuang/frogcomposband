@@ -848,6 +848,7 @@ static void wr_extra(savefile_ptr file)
     savefile_write_s16b(file, today_mon);
     savefile_write_s16b(file, p_ptr->today_mon);
     savefile_write_s16b(file, p_ptr->riding);
+    savefile_write_bool(file, p_ptr->force_1h);
     savefile_write_s16b(file, p_ptr->floor_id);
     savefile_write_byte(file, overworld_visit);
     savefile_write_u32b(file, playtime);
@@ -1595,10 +1596,13 @@ bool load_player(void)
     if (!savefile[0]) return (TRUE);
 
 
-#if !defined(MACINTOSH) && !defined(WINDOWS) && !defined(VM)
-
-    /* XXX XXX XXX Fix this */
-
+#if !defined(MACINTOSH) && !defined(VM)
+#ifdef WINDOWS
+    if (strcmp(ANGBAND_SYS, "web") == 0 && access(savefile, 0) < 0)
+    {
+        return (TRUE);
+    }
+#else
     /* Verify the existance of the savefile */
     if (access(savefile, 0) < 0)
     {
@@ -1610,7 +1614,7 @@ bool load_player(void)
         /* Allow this */
         return (TRUE);
     }
-
+#endif
 #endif
 
 

@@ -4505,16 +4505,12 @@ static void do_cmd_knowledge_artifacts(void)
  * Display known uniques
  * With "XTRA HACK UNIQHIST" (Originally from XAngband)
  */
-static void do_cmd_knowledge_uniques(void)
+void do_cmd_knowledge_uniques(void)
 {
     int i, k, n = 0;
     u16b why = 2;
     s16b *who;
-
-    FILE *fff;
-
-    char file_name[1024];
-
+    doc_ptr doc = doc_alloc(80);
     int n_alive[10];
     int n_alive_surface = 0;
     int n_alive_over100 = 0;
@@ -4522,16 +4518,6 @@ static void do_cmd_knowledge_uniques(void)
     int max_lev = -1;
 
     for (i = 0; i < 10; i++) n_alive[i] = 0;
-
-    /* Open a new file */
-    fff = my_fopen_temp(file_name, 1024);
-
-    if (!fff)
-    {
-        msg_format("Failed to create temporary file %s.", file_name);
-        msg_print(NULL);
-        return;
-    }
 
     /* Allocate the "who" array */
     C_MAKE(who, max_r_idx, s16b);
@@ -4549,7 +4535,7 @@ static void do_cmd_knowledge_uniques(void)
         if (r_ptr->flagsx & RFX_SUPPRESS) continue;
 
         /* Only display "known" uniques */
-		if (!easy_lore && !r_ptr->r_sights) continue;
+        if (!easy_lore && !r_ptr->r_sights) continue;
 
         /* Only print rarity <= 100 uniques */
         if (!r_ptr->rarity || ((r_ptr->rarity > 100) && !(r_ptr->flagsx & RFX_QUESTOR))) continue;
@@ -4582,28 +4568,28 @@ static void do_cmd_knowledge_uniques(void)
 
     if (n_alive_surface)
     {
-        fprintf(fff, "      Surface  alive: %3d\n", n_alive_surface);
+        doc_printf(doc, "      Surface  alive: %3d\n", n_alive_surface);
         n_alive_total += n_alive_surface;
     }
     for (i = 0; i <= max_lev; i++)
     {
-        fprintf(fff, "Level %3d-%3d  alive: %3d\n", 1 + i * 10, 10 + i * 10, n_alive[i]);
+        doc_printf(doc, "Level %3d-%3d  alive: %3d\n", 1 + i * 10, 10 + i * 10, n_alive[i]);
         n_alive_total += n_alive[i];
     }
     if (n_alive_over100)
     {
-        fprintf(fff, "Level 101-     alive: %3d\n", n_alive_over100);
+        doc_printf(doc, "Level 101-     alive: %3d\n", n_alive_over100);
         n_alive_total += n_alive_over100;
     }
 
     if (n_alive_total)
     {
-        fputs("-------------  ----------\n", fff);
-        fprintf(fff, "        Total  alive: %3d\n\n", n_alive_total);
+        doc_insert(doc, "-------------  ----------\n");
+        doc_printf(doc, "        Total  alive: %3d\n\n", n_alive_total);
     }
     else
     {
-        fputs("No known uniques alive.\n", fff);
+        doc_insert(doc, "No known uniques alive.\n");
     }
 
     /* Scan the monster races */
@@ -4612,21 +4598,17 @@ static void do_cmd_knowledge_uniques(void)
         monster_race *r_ptr = &r_info[who[k]];
 
         /* Print a message */
-        fprintf(fff, "     %s (level %d)\n", r_name + r_ptr->name, r_ptr->level);
+        doc_printf(doc, "     %s (level %d)\n", r_name + r_ptr->name, r_ptr->level);
     }
 
     /* Free the "who" array */
     C_KILL(who, max_r_idx, s16b);
 
-    /* Close the file */
-    my_fclose(fff);
+    /* Display the document */
+    doc_display(doc, "Alive Uniques", 0);
 
-    /* Display the file contents */
-    show_file(TRUE, file_name, "Alive Uniques", 0, 0);
-
-
-    /* Remove the file */
-    fd_kill(file_name);
+    /* Free the document */
+    doc_free(doc);
 }
 
 void do_cmd_knowledge_shooter(void)
@@ -4794,6 +4776,9 @@ static void _prof_weapon_doc(doc_ptr doc, int tval, int mode)
                     doc_printf(doc, " <color:%c>%3d%%</color>", _prof_exp_color[pct_lvl], pct);
                     break;
                 }
+            case 4:
+                doc_printf(doc, "<color:%c>%5d</color>", _prof_exp_color[exp_lvl], exp);
+                break;
             default:
                 doc_printf(doc, "%c<color:%c>%-4s</color>", exp >= max ? '!' : ' ', _prof_exp_color[exp_lvl], _prof_exp_str[exp_lvl]);
                 break;
@@ -4858,6 +4843,9 @@ static void _prof_skill_aux(doc_ptr doc, int skill, int mode)
                 doc_printf(doc, " <color:%c>%3d%%</color>", _prof_exp_color[pct_lvl], pct);
                 break;
             }
+        case 4:
+            doc_printf(doc, "<color:%c>%5d</color>", _prof_exp_color[exp_lvl], exp);
+            break;
         default:
             doc_printf(doc, "%c<color:%c>%-4s</color>", exp >= max ? '!' : ' ', _prof_exp_color[exp_lvl], _prof_exp_str[exp_lvl]);
             break;
@@ -4904,6 +4892,7 @@ static int _do_cmd_knowledge_weapon_exp_aux(int mode, int *huippu)
         }
         case 2: tulos = weapon_exp_display(doc, "Current Proficiency as % of Caps", huippu); break;
         case 3: tulos = weapon_exp_display(doc, "Current Proficiency as % of Full Mastery", huippu); break;
+        case 4: tulos = weapon_exp_display(doc, "Current Proficiency (Actual Values)", huippu); break;
         default: tulos = weapon_exp_display(doc, "Current Proficiency", huippu); break;
     }
 
@@ -4921,7 +4910,7 @@ static void do_cmd_knowledge_weapon_exp(void)
 
     while (!lopeta)
     {
-        if (_do_cmd_knowledge_weapon_exp_aux(mode, &huippu)) mode = ((mode + 1) % 4);
+        if (_do_cmd_knowledge_weapon_exp_aux(mode, &huippu)) mode = ((mode + 1) % 5);
         else lopeta = TRUE;
     } 
 }
@@ -7190,57 +7179,169 @@ static void do_cmd_knowledge_features(bool *need_redraw, bool visual_only, int d
 /*
  * List wanted monsters
  */
-static void do_cmd_knowledge_kubi(void)
+static cptr _get_monster_location_desc(monster_race *r_ptr)
+{
+    static char buf[1024];
+    buf[0] = '\0';
+
+    /* Associated Dungeon */
+    if (r_ptr->dungeon)
+    {
+        dungeon_info_type *d_ptr = &d_info[r_ptr->dungeon];
+        strcat(buf, d_name + d_ptr->name);
+    }
+    
+    /* Wilderness Terrains */
+    if (r_ptr->flags8 & RF8_WILD_ONLY) { if (buf[0]) strcat(buf, ", "); strcat(buf, "WildOnly"); }
+    else if (r_ptr->flags8 & RF8_WILD_ALL) { if (buf[0]) strcat(buf, ", "); strcat(buf, "Everywhere"); }
+    else if (r_ptr->flags8 & (RF8_WILD_TOWN | RF8_WILD_SHORE | RF8_WILD_OCEAN | RF8_WILD_WASTE | RF8_WILD_WOOD | RF8_WILD_VOLCANO | RF8_WILD_SNOW | RF8_WILD_MOUNTAIN | RF8_WILD_GRASS))
+    {
+        char wild[256] = "";
+        if (r_ptr->flags8 & RF8_WILD_TOWN) strcat(wild, "Town/");
+        if (r_ptr->flags8 & RF8_WILD_SHORE) strcat(wild, "Shore/");
+        if (r_ptr->flags8 & RF8_WILD_OCEAN) strcat(wild, "Ocean/");
+        if (r_ptr->flags8 & RF8_WILD_WASTE) strcat(wild, "Waste/");
+        if (r_ptr->flags8 & RF8_WILD_WOOD) strcat(wild, "Wood/");
+        if (r_ptr->flags8 & RF8_WILD_VOLCANO) strcat(wild, "Volca/");
+        if (r_ptr->flags8 & RF8_WILD_SNOW) strcat(wild, "Snow/");
+        if (r_ptr->flags8 & RF8_WILD_MOUNTAIN) strcat(wild, "Mount/");
+        if (r_ptr->flags8 & RF8_WILD_GRASS) strcat(wild, "Grass/");
+        
+        if (wild[0])
+        {
+            wild[strlen(wild)-1] = '\0'; 
+            if (buf[0]) strcat(buf, ", ");
+            strcat(buf, wild);
+        }
+    }
+
+    /* Special Spawning Constraints */
+    if (r_ptr->flags7 & RF7_GUARDIAN) { if (buf[0]) strcat(buf, " "); strcat(buf, "[G]"); }
+    if (r_ptr->flagsx & RFX_QUESTOR) { if (buf[0]) strcat(buf, " "); strcat(buf, "[Q]"); }
+    if (r_ptr->flags1 & RF1_FORCE_DEPTH) { if (buf[0]) strcat(buf, " "); strcat(buf, "[F]"); }
+
+    if (!buf[0]) 
+    {
+        if (r_ptr->level > 0) sprintf(buf, "Depth Lvl %d+", r_ptr->level);
+        else strcpy(buf, "Various");
+    }
+    
+    return buf;
+}
+
+
+void do_cmd_knowledge_kubi(void)
 {
     int i;
-    FILE *fff;
+    doc_ptr doc = doc_alloc(80);
 
-    char file_name[1024];
+    /* Today target */
+    doc_printf(doc, "Today target : <color:y>%s</color>\n", (p_ptr->today_mon ? r_name + r_info[p_ptr->today_mon].name : "unknown"));
+    doc_insert(doc, "\n");
 
+    /* Wanted monsters from posters */
+    doc_insert(doc, "<color:r>List of wanted monsters</color>\n");
+    doc_insert(doc, "----------------------------------------------\n");
 
-    /* Open a new file */
-    fff = my_fopen_temp(file_name, 1024);
-    if (!fff) {
-        msg_format("Failed to create temporary file %s.", file_name);
-        msg_print(NULL);
-        return;
-    }
-
-    if (fff)
+    bool listed = FALSE;
+    for (i = 0; i < MAX_KUBI; i++)
     {
-        bool listed = FALSE;
-
-        fprintf(fff, "Today target : %s\n", (p_ptr->today_mon ? r_name + r_info[p_ptr->today_mon].name : "unknown"));
-        fprintf(fff, "\n");
-        fprintf(fff, "List of wanted monsters\n");
-        fprintf(fff, "----------------------------------------------\n");
-
-        for (i = 0; i < MAX_KUBI; i++)
+        int id = kubi_r_idx[i];
+        if (0 < id && id < 10000)
         {
-            int id = kubi_r_idx[i];
-            if (0 < id && id < 10000)
-            {
-                fprintf(fff,"%s\n", r_name + r_info[id].name);
-                listed = TRUE;
-            }
-        }
-
-        if (!listed)
-        {
-            fprintf(fff,"\n%s\n", "You have turned in all wanted monsters.");
+            doc_printf(doc, "%s\n", r_name + r_info[id].name);
+            listed = TRUE;
         }
     }
 
-    /* Close the file */
-    my_fclose(fff);
+    if (!listed)
+    {
+        doc_insert(doc, "You have turned in all wanted monsters.\n");
+    }
 
-    /* Display the file contents */
-    show_file(TRUE, file_name, "Wanted monsters", 0, 0);
+    /* Display the document */
+    doc_display(doc, "Wanted monsters", 0);
 
-
-    /* Remove the file */
-    fd_kill(file_name);
+    /* Free the document */
+    doc_free(doc);
 }
+
+void do_cmd_wanted_uniques(void)
+{
+    int i, count = 0;
+    doc_ptr doc;
+
+    screen_save();
+    doc = doc_alloc(80);
+
+    doc_insert(doc, "<color:r>Wanted Monster Detailed Report</color>\n");
+    doc_insert(doc, "----------------------------------------------------------------------\n");
+    doc_insert(doc, "Num Typ Stat Lv Sight Location             Name\n");
+    doc_insert(doc, "----------------------------------------------------------------------\n");
+
+    /* 1. Today Target */
+    if (p_ptr->today_mon)
+    {
+        monster_race *r_ptr = &r_info[p_ptr->today_mon];
+        doc_printf(doc, "%2d) <color:y>Dai</color> ", ++count);
+        if (r_ptr->flags1 & RF1_UNIQUE)
+        {
+            if (r_ptr->max_num == 0) doc_insert(doc, "<color:r>Dead</color> ");
+            else doc_insert(doc, "<color:g>Aliv</color> ");
+        }
+        else doc_insert(doc, "     ");
+        
+        doc_printf(doc, "%2d %5d %-20.20s %s\n", 
+            r_ptr->level, 
+            r_ptr->r_sights, 
+            _get_monster_location_desc(r_ptr),
+            r_name + r_ptr->name);
+    }
+    else
+    {
+        doc_insert(doc, " 1) <color:y>Dai</color> (Unknown - Visit a Bounty Master to unlock)\n");
+        count = 1;
+    }
+
+    /* 2. Poster Targets */
+    for (i = 0; i < MAX_KUBI; i++)
+    {
+        int id = kubi_r_idx[i];
+        if (0 < id && id < 10000)
+        {
+            monster_race *r_ptr = &r_info[id];
+            doc_printf(doc, "%2d) Post ", ++count);
+            if (r_ptr->flags1 & RF1_UNIQUE)
+            {
+                if (r_ptr->max_num == 0) doc_insert(doc, "<color:r>Dead</color> ");
+                else doc_insert(doc, "<color:g>Aliv</color> ");
+            }
+            else doc_insert(doc, "     ");
+
+            doc_printf(doc, "%2d %5d %-20.20s %s\n", 
+                r_ptr->level, 
+                r_ptr->r_sights, 
+                _get_monster_location_desc(r_ptr),
+                r_name + r_ptr->name);
+        }
+    }
+
+    doc_insert(doc, "----------------------------------------------------------------------\n");
+    doc_insert(doc, "\n[Dai]: Daily Bounty  [Post]: Poster  [Aliv/Dead]: Status\n");
+    doc_insert(doc, "[Lv]: Level  [Sight]: Encounter count\n");
+    doc_insert(doc, "[G]: Guardian  [Q]: Questor  [F]: Force Depth\n");
+    doc_insert(doc, "Press ESC or 'q' to exit.\n");
+
+    /* Display the document */
+    flush();
+    doc_display(doc, "Wanted Monsters Details", 0);
+
+    /* Free the document and restore screen */
+    doc_free(doc);
+    screen_load();
+    Term_fresh();
+}
+
 
 /*
  * List virtues & status
