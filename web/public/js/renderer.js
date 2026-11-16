@@ -330,10 +330,25 @@ export class GameRenderer {
           if ((a & 0x80) && (c & 0x80) && (a !== ta || c !== tc)) {
             ctx.drawImage(sheet.img, (c & 0x7f) * ts, (a & 0x7f) * ts, ts, ts, dx, dy, tileDraw, tileDraw);
           }
-        } else if (useOverhaul || useRemaster16) {
+        } else if (useOverhaul) {
+          // Pure 5-Buffer Procedural Pixel Engine (10 Archetype Grids + 4 DNA Mutations + Parametric NMM Items)
+          if (obj) {
+            const [, , tval, sval, kIdx, dAttr] = obj;
+            const sym = tval === 75 ? 33 : tval === 70 ? 63 : tval === 127 ? 36 : tval >= 20 && tval <= 23 ? 124 : tval === 45 ? 61 : tval === 7 ? 126 : 91;
+            const itemImg = this.atlas.getItemSprite(tval, sym, dAttr, kIdx || sval);
+            ctx.drawImage(itemImg, dx, dy, tileDraw, tileDraw);
+          }
+          if (mon) {
+            const [, , , , , , , dChar, rIdx, dAttr] = mon;
+            const monImg = this.atlas.getCreatureSprite("mon", dChar, dAttr, rIdx);
+            ctx.drawImage(monImg, dx, dy, tileDraw, tileDraw);
+          }
+          if (isPlayer) {
+            const pImg = this.atlas.getCreatureSprite("player", 64, 6, p.pclass || 0);
+            ctx.drawImage(pImg, dx, dy, tileDraw, tileDraw);
+          }
+        } else if (useRemaster16) {
           let drawn = false;
-
-          // Prefer non-destructively remastered 16x16 sprite whenever a real 16x16 tile exists!
           if ((a & 0x80) && (c & 0x80) && (a !== ta || c !== tc || isPlayer || mon || obj)) {
             const rem = this.atlas.getRemastered16x(a & 0x7f, c & 0x7f);
             if (rem) {
@@ -341,27 +356,20 @@ export class GameRenderer {
               drawn = true;
             }
           }
-
-          // Fallback ONLY for entities without a 16x16 bitmap in 16x16.png
           if (!drawn) {
             if (isPlayer) {
-              const fb = this.atlas.getFallbackEntity("player", 64, 1, p.pclass || 0);
-              ctx.drawImage(fb, dx, dy, tileDraw, tileDraw);
+              ctx.drawImage(this.atlas.getCreatureSprite("player", 64, 6, p.pclass || 0), dx, dy, tileDraw, tileDraw);
             } else if (mon) {
               const [, , , , , , , dChar, rIdx, dAttr, xAttr, xChar] = mon;
-              let sprite = (xAttr & 0x80) && (xChar & 0x80)
-                ? this.atlas.getRemastered16x(xAttr & 0x7f, xChar & 0x7f)
-                : null;
-              if (!sprite) sprite = this.atlas.getFallbackEntity("mon", dChar, dAttr, rIdx);
+              let sprite = (xAttr & 0x80) && (xChar & 0x80) ? this.atlas.getRemastered16x(xAttr & 0x7f, xChar & 0x7f) : null;
+              if (!sprite) sprite = this.atlas.getCreatureSprite("mon", dChar, dAttr, rIdx);
               ctx.drawImage(sprite, dx, dy, tileDraw, tileDraw);
             } else if (obj) {
               const [, , tval, sval, kIdx, dAttr, xAttr, xChar] = obj;
-              let sprite = (xAttr & 0x80) && (xChar & 0x80)
-                ? this.atlas.getRemastered16x(xAttr & 0x7f, xChar & 0x7f)
-                : null;
+              let sprite = (xAttr & 0x80) && (xChar & 0x80) ? this.atlas.getRemastered16x(xAttr & 0x7f, xChar & 0x7f) : null;
               if (!sprite) {
-                const sym = tval === 75 ? 33 : tval === 70 ? 63 : tval === 127 ? 36 : tval >= 20 && tval <= 23 ? 124 : tval === 45 ? 61 : 126;
-                sprite = this.atlas.getFallbackEntity("item", sym, dAttr, kIdx || sval);
+                const sym = tval === 75 ? 33 : tval === 70 ? 63 : tval === 127 ? 36 : tval >= 20 && tval <= 23 ? 124 : tval === 45 ? 61 : tval === 7 ? 126 : 91;
+                sprite = this.atlas.getItemSprite(tval, sym, dAttr, kIdx || sval);
               }
               ctx.drawImage(sprite, dx, dy, tileDraw, tileDraw);
             }
